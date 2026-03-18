@@ -37,6 +37,25 @@ CREATE TABLE IF NOT EXISTS user_roles (
     assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Registration requests (approval queue)
+CREATE TABLE IF NOT EXISTS registration_requests (
+    request_id SERIAL PRIMARY KEY,
+    username VARCHAR(100) NOT NULL,
+    password_hash TEXT NOT NULL,
+    email VARCHAR(150),
+    phone VARCHAR(20),
+    role VARCHAR(50) NOT NULL,
+    student_first_name VARCHAR(100),
+    student_last_name VARCHAR(100),
+    student_admission_number VARCHAR(50),
+    parent_relationship VARCHAR(50),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    rejection_reason TEXT,
+    reviewed_by INT REFERENCES users(user_id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at TIMESTAMP
+);
+
 -- System Settings
 CREATE TABLE IF NOT EXISTS system_settings (
     setting_key VARCHAR(100) PRIMARY KEY,
@@ -83,6 +102,7 @@ CREATE TABLE IF NOT EXISTS parents (
     parent_id SERIAL PRIMARY KEY,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
+    gender VARCHAR(10),
     phone VARCHAR(20) NOT NULL,
     email VARCHAR(150),
     address TEXT,

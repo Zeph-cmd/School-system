@@ -29,6 +29,30 @@ async function ensureSystemSettingsTable() {
   );
 }
 
+async function ensureRegistrationRequestsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS registration_requests (
+      request_id SERIAL PRIMARY KEY,
+      username VARCHAR(100) NOT NULL,
+      password_hash TEXT NOT NULL,
+      email VARCHAR(150),
+      phone VARCHAR(20),
+      role VARCHAR(50) NOT NULL,
+      student_first_name VARCHAR(100),
+      student_last_name VARCHAR(100),
+      student_admission_number VARCHAR(50),
+      parent_relationship VARCHAR(50),
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      rejection_reason TEXT,
+      reviewed_by INT REFERENCES users(user_id),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      reviewed_at TIMESTAMP
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_registration_requests_status_created ON registration_requests (status, created_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_registration_requests_username ON registration_requests (username)');
+}
+
 async function findStudentForParentRequest(firstName, lastName, admissionNo, guardianName) {
   return pool.query(
     `SELECT s.student_id
@@ -59,6 +83,8 @@ async function findStudentForParentRequest(firstName, lastName, admissionNo, gua
 // New users register and go into pending state.
 async function register(req, res) {
   try {
+    await ensureRegistrationRequestsTable();
+
     const {
       username,
       password,
@@ -270,35 +296,51 @@ async function register(req, res) {
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    const userResult = await pool.query(
-      `INSERT INTO users (username, password_hash, email, phone, status)
-       VALUES ($1,$2,$3,$4,'pending') RETURNING user_id`,
-      [cleanUsername, passwordHash, cleanEmail || null, cleanPhone || null]
-    );
-    const userId = userResult.rows[0].user_id;
+    const client = await pool.connect();
+    let userId;
+    let result;
+    try {
+      await client.query('BEGIN');
 
-    const roleRes = await pool.query('SELECT role_id FROM roles WHERE role_name = $1', [role]);
-    if (roleRes.rows.length === 0) {
-      return res.status(400).json({ error: `Role not configured: ${role}` });
+      const userResult = await client.query(
+        `INSERT INTO users (username, password_hash, email, phone, status)
+         VALUES ($1,$2,$3,$4,'pending') RETURNING user_id`,
+        [cleanUsername, passwordHash, cleanEmail || null, cleanPhone || null]
+      );
+      userId = userResult.rows[0].user_id;
+
+      const roleRes = await client.query('SELECT role_id FROM roles WHERE role_name = $1', [role]);
+      if (roleRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Role not configured: ${role}` });
+      }
+
+      await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1,$2)', [userId, roleRes.rows[0].role_id]);
+
+      result = await client.query(
+        `INSERT INTO registration_requests
+         (username, password_hash, email, phone, role, student_first_name, student_last_name, student_admission_number, parent_relationship)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING request_id, status`,
+        [
+          cleanUsername,
+          passwordHash,
+          cleanEmail || null,
+          cleanPhone || null,
+          role,
+          cleanStudentFirst || null,
+          cleanStudentLast || null,
+          cleanAdmissionNumber || null,
+          cleanParentRelationship || null,
+        ]
+      );
+
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
     }
-    await pool.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1,$2)', [userId, roleRes.rows[0].role_id]);
-
-    const result = await pool.query(
-      `INSERT INTO registration_requests
-       (username, password_hash, email, phone, role, student_first_name, student_last_name, student_admission_number, parent_relationship)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING request_id, status`,
-      [
-        cleanUsername,
-        passwordHash,
-        cleanEmail || null,
-        cleanPhone || null,
-        role,
-        cleanStudentFirst || null,
-        cleanStudentLast || null,
-        cleanAdmissionNumber || null,
-        cleanParentRelationship || null,
-      ]
-    );
 
     res.status(201).json({
       message: 'Registration request submitted. Please wait for admin approval.',
@@ -321,6 +363,8 @@ async function register(req, res) {
 // POST /api/auth/login
 async function login(req, res) {
   try {
+    await ensureRegistrationRequestsTable();
+
     const { username, email, password, role } = req.body;
 
     if (!username) {

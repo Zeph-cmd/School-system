@@ -66,6 +66,34 @@ async function ensureEmailLogsTable() {
   `);
 }
 
+async function ensureRegistrationRequestsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS registration_requests (
+      request_id SERIAL PRIMARY KEY,
+      username VARCHAR(100) NOT NULL,
+      password_hash TEXT NOT NULL,
+      email VARCHAR(150),
+      phone VARCHAR(20),
+      role VARCHAR(50) NOT NULL,
+      student_first_name VARCHAR(100),
+      student_last_name VARCHAR(100),
+      student_admission_number VARCHAR(50),
+      parent_relationship VARCHAR(50),
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      rejection_reason TEXT,
+      reviewed_by INT REFERENCES users(user_id),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      reviewed_at TIMESTAMP
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_registration_requests_status_created ON registration_requests (status, created_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_registration_requests_username ON registration_requests (username)');
+}
+
+async function ensureParentsGenderColumn() {
+  await pool.query('ALTER TABLE parents ADD COLUMN IF NOT EXISTS gender VARCHAR(10)');
+}
+
 function parseBoolean(value) {
   if (typeof value === 'boolean') return value;
   const raw = String(value || '').trim().toLowerCase();
@@ -770,6 +798,7 @@ async function getParents(req, res) {
 
 async function createParent(req, res) {
   try {
+    await ensureParentsGenderColumn();
     const { first_name, last_name, phone, email, address, relationship, gender } = req.body;
     if (!first_name || !last_name || !phone || !email || !gender || !relationship) {
       return res.status(400).json({ error: 'Missing required fields. Only address is optional.' });
@@ -793,6 +822,7 @@ async function createParent(req, res) {
 
 async function updateParent(req, res) {
   try {
+    await ensureParentsGenderColumn();
     const { id } = req.params;
     const { first_name, last_name, phone, email, address, relationship, gender } = req.body;
     const old = await pool.query('SELECT * FROM parents WHERE parent_id = $1', [id]);
@@ -1479,6 +1509,7 @@ async function getAuditLogs(req, res) {
 // ─── PENDING REGISTRATIONS ──────────────────────────────────────
 async function getPendingRegistrations(req, res) {
   try {
+    await ensureRegistrationRequestsTable();
     const { role, q } = req.query;
 
     const params = [];
@@ -1526,6 +1557,7 @@ async function getPendingRegistrations(req, res) {
 
 async function approveRegistration(req, res) {
   try {
+    await ensureRegistrationRequestsTable();
     const { id } = req.params;
 
     const reqRes = await pool.query(
@@ -1632,6 +1664,7 @@ async function approveRegistration(req, res) {
 
 async function rejectRegistration(req, res) {
   try {
+    await ensureRegistrationRequestsTable();
     const { id } = req.params;
     const { reason } = req.body;
 
@@ -1800,6 +1833,7 @@ async function rejectGradeChange(req, res) {
 async function getNotifications(req, res) {
   try {
     await ensureGradeChangeRequestsTable();
+    await ensureRegistrationRequestsTable();
     const [pending, pendingGradeChanges, recentAudit] = await Promise.all([
       pool.query("SELECT COUNT(*) AS cnt FROM registration_requests WHERE status = 'pending'"),
       pool.query("SELECT COUNT(*) AS cnt FROM grade_change_requests WHERE status = 'pending'"),
