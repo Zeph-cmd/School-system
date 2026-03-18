@@ -1,0 +1,4 @@
+node_modules/
+.env
+schema.csv
+schema.txt

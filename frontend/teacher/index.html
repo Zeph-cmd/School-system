@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teacher Dashboard - School Management</title>
+  <link rel="stylesheet" href="/styles/main.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h2>School Mgmt</h2>
+      <div class="role-badge">Teacher Panel</div>
+      <nav>
+        <a href="#" data-section="assignments" class="active">&#128221; <span>My Classes</span></a>
+        <a href="#" data-section="students">&#127891; <span>Students</span></a>
+        <a href="#" data-section="grades">&#128200; <span>Grades</span></a>
+        <a href="#" data-section="homework">&#128218; <span>Homework</span></a>
+        <a href="#" data-section="messages">&#128172; <span>Messages</span></a>
+      </nav>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </aside>
+
+    <main class="main">
+      <div id="alert"></div>
+
+      <!-- My Assignments/Classes -->
+      <div id="sec-assignments" class="section active">
+        <h1>My Teaching Assignments</h1>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>Subject</th><th>Code</th><th>Class</th><th>Level</th><th>Year</th><th>Term</th>
+          </tr></thead><tbody id="assignmentsTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Students in a Class -->
+      <div id="sec-students" class="section">
+        <h1>Students</h1>
+        <div class="form-group" style="max-width:300px;margin-bottom:1rem">
+          <label>Select Class</label>
+          <select id="studentClassSelect" onchange="loadStudents()">
+            <option value="">Choose a class...</option>
+          </select>
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>Adm No</th><th>Name</th><th>Gender</th><th>Parent Contact(s)</th><th>Status</th>
+          </tr></thead><tbody id="studentsTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Grades -->
+      <div id="sec-grades" class="section">
+        <h1>Enter Grades</h1>
+        <div id="gradeLockNotice" class="alert alert-error" style="display:none; margin-bottom:1rem;"></div>
+        <div class="form-row" style="max-width:600px;margin-bottom:1rem">
+          <div class="form-group">
+            <label>Class</label>
+            <select id="gradeClassSelect" onchange="loadGradeStudents()">
+              <option value="">Choose a class...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Subject</label>
+            <select id="gradeSubjectSelect" onchange="loadGradeStudents()">
+              <option value="">Choose subject...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Term</label>
+            <input type="text" id="gradeTerm" placeholder="e.g. Term 1" value="Term 1">
+          </div>
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>Student</th><th>Marks</th><th>Grade</th><th>Remarks</th><th>Action</th>
+          </tr></thead><tbody id="gradesTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Homework -->
+      <div id="sec-homework" class="section">
+        <h1>Homework / Assignments</h1>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="openHomeworkForm()">+ Add Homework</button>
+        </div>
+
+        <!-- Add Homework Form (hidden by default) -->
+        <div id="homeworkFormContainer" style="display:none; background:var(--card); padding:1.5rem; border-radius:10px; margin-bottom:1.5rem; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+          <h2 style="margin-bottom:1rem;">New Homework</h2>
+          <form id="homeworkForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Class</label>
+                <select id="hwClassSelect" required onchange="syncHomeworkSubjectsByClass()">
+                  <option value="">Choose a class...</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Subject</label>
+                <select id="hwSubjectSelect" required>
+                  <option value="">Choose subject...</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Title</label>
+              <input type="text" id="hwTitle" required>
+            </div>
+            <div class="form-group">
+              <label>Description</label>
+              <textarea id="hwDescription" rows="3" placeholder="Optional" style="width:100%;padding:0.6rem 0.75rem;border:1px solid var(--border);border-radius:6px;font-size:0.95rem;"></textarea>
+            </div>
+            <div class="form-group" style="max-width:200px;">
+              <label>Due Date</label>
+              <input type="date" id="hwDueDate" placeholder="Optional">
+            </div>
+            <div class="btn-group">
+              <button type="button" class="btn" onclick="closeHomeworkForm()">Cancel</button>
+              <button type="submit" class="btn btn-primary">Save Homework</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="table-container">
+          <table><thead><tr>
+            <th>Title</th><th>Subject</th><th>Class</th><th>Due Date</th><th>Created</th><th>Actions</th>
+          </tr></thead><tbody id="homeworkTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Messages -->
+      <div id="sec-messages" class="section">
+        <h1>Messages</h1>
+        <div class="record-card" style="margin-bottom:1rem;">
+          <h3>Send Message to Parent</h3>
+          <div class="form-group">
+            <label>Parent</label>
+            <select id="msgParentSelect">
+              <option value="">Choose parent...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Subject</label>
+            <input type="text" id="msgSubject" placeholder="Optional subject">
+          </div>
+          <div class="form-group">
+            <label>Message</label>
+            <textarea id="msgBody" rows="4" placeholder="Type your message..."></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="sendParentMessage()">Send</button>
+        </div>
+
+        <div class="table-container" id="teacherMessageListWrap">
+          <table><thead><tr>
+            <th>ID</th><th>From</th><th>To</th><th>Subject</th><th>Date</th><th>Actions</th>
+          </tr></thead><tbody id="teacherMessagesTable"></tbody></table>
+        </div>
+
+        <div id="teacherConversation" style="display:none"></div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const API = '/api/teacher';
+    const token = localStorage.getItem('token');
+    if (!token) { window.location.href = '/login'; }
+
+    // Verify user has teacher role
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      try {
+        const user = JSON.parse(userData);
+        if (!user.roles || !user.roles.includes('teacher')) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          window.location.href = '/login';
+        }
+      } catch (e) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
+    } else {
+      window.location.href = '/login';
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
+
+    async function api(url, method = 'GET', body = null) {
+      const opts = { method, headers };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(url, opts);
+      if (res.status === 401) { logout(); return null; }
+      return res.json();
+    }
+
+    function showAlert(msg, type = 'success') {
+      const el = document.getElementById('alert');
+      el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+      setTimeout(() => el.innerHTML = '', 3000);
+    }
+
+    function logout() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+
+    // Navigation
+    document.querySelectorAll('.sidebar nav a').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const section = link.dataset.section;
+        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.remove('active'));
+        document.getElementById(`sec-${section}`).classList.add('active');
+        link.classList.add('active');
+        if (section === 'messages') loadTeacherMessages();
+      });
+    });
+
+    let myAssignments = [];
+    let myHomework = {};
+    let gradeEditEnabled = false;
+
+    function populateHomeworkClassOptions() {
+      const classMap = new Map();
+      myAssignments.forEach(a => classMap.set(String(a.class_id), a.class_name));
+      const classOpts = Array.from(classMap).map(([id, name]) => `<option value="${id}">${name}</option>`).join('');
+      document.getElementById('hwClassSelect').innerHTML = '<option value="">Choose a class...</option>' + classOpts;
+    }
+
+    function syncHomeworkSubjectsByClass() {
+      const classId = document.getElementById('hwClassSelect').value;
+      const filtered = classId
+        ? myAssignments.filter(a => String(a.class_id) === String(classId))
+        : myAssignments;
+      const subMap = new Map();
+      filtered.forEach(a => subMap.set(String(a.subject_id), a.subject_name));
+      const subOpts = Array.from(subMap).map(([id, name]) => `<option value="${id}">${name}</option>`).join('');
+      document.getElementById('hwSubjectSelect').innerHTML = '<option value="">Choose subject...</option>' + subOpts;
+    }
+
+    async function loadGradeEditStatus() {
+      const data = await api(`${API}/grades/edit-status`);
+      if (!data) return;
+      gradeEditEnabled = !!data.grade_edit_enabled;
+      const notice = document.getElementById('gradeLockNotice');
+      if (!notice) return;
+      if (gradeEditEnabled) {
+        notice.style.display = 'none';
+        notice.textContent = '';
+      } else {
+        notice.style.display = 'block';
+        notice.textContent = 'Grade editing is locked by admin. You can view entries but cannot save changes.';
+      }
+    }
+
+    // Load assignments and populate class dropdowns
+    async function loadAssignments() {
+      const data = await api(`${API}/assignments`);
+      if (!data) return;
+      myAssignments = data;
+      await loadGradeEditStatus();
+
+      document.getElementById('assignmentsTable').innerHTML = data.map(a => `<tr>
+        <td>${a.subject_name}</td><td>${a.subject_code}</td><td>${a.class_name}</td>
+        <td>${a.level}</td><td>${a.academic_year}</td><td>${a.term || '-'}</td>
+      </tr>`).join('') || '<tr><td colspan="6">No assignments found. Ask admin to link your email.</td></tr>';
+
+      // Populate class dropdowns (unique classes)
+      const classMap = new Map();
+      data.forEach(a => classMap.set(a.class_id, a.class_name));
+      const classOpts = Array.from(classMap).map(([id, name]) => `<option value="${id}">${name}</option>`).join('');
+
+      document.getElementById('studentClassSelect').innerHTML = '<option value="">Choose a class...</option>' + classOpts;
+      document.getElementById('gradeClassSelect').innerHTML = '<option value="">Choose a class...</option>' + classOpts;
+
+      // Populate subject dropdown (unique subjects)
+      const subMap = new Map();
+      data.forEach(a => subMap.set(a.subject_id, a.subject_name));
+      const subOpts = Array.from(subMap).map(([id, name]) => `<option value="${id}">${name}</option>`).join('');
+      document.getElementById('gradeSubjectSelect').innerHTML = '<option value="">Choose subject...</option>' + subOpts;
+
+      // Keep homework form dropdowns aligned to this teacher's assignments.
+      populateHomeworkClassOptions();
+      syncHomeworkSubjectsByClass();
+    }
+
+    async function loadStudents() {
+      const classId = document.getElementById('studentClassSelect').value;
+      if (!classId) { document.getElementById('studentsTable').innerHTML = ''; return; }
+
+      const data = await api(`${API}/students?class_id=${classId}`);
+      if (!data) return;
+      document.getElementById('studentsTable').innerHTML = data.map(s => `<tr>
+        <td>${s.admission_number}</td><td>${s.first_name} ${s.last_name}</td>
+        <td>${s.gender}</td><td>${s.parent_contacts || '-'}</td><td>${s.enrollment_status}</td>
+      </tr>`).join('') || '<tr><td colspan="5">No students enrolled.</td></tr>';
+    }
+
+    async function loadAttendanceStudents() {
+      const classId = document.getElementById('attClassSelect').value;
+      const date = document.getElementById('attDate').value;
+      if (!classId || !date) return;
+
+      // Load students in the class
+      const students = await api(`${API}/students?class_id=${classId}`);
+      if (!students) return;
+
+      // Load existing attendance for this date
+      const existing = await api(`${API}/attendance?class_id=${classId}&date=${date}`);
+      const attMap = new Map();
+      if (existing) existing.forEach(a => attMap.set(a.enrollment_id || 0, a));
+
+      document.getElementById('attendanceTable').innerHTML = students.map(s => {
+        const att = attMap.get(s.enrollment_id);
+        const statusVal = att ? att.status : 'present';
+        const remarksVal = att ? (att.remarks || '') : '';
+        return `<tr>
+          <td>${s.first_name} ${s.last_name}</td>
+          <td><select id="att-status-${s.enrollment_id}">
+            <option value="present" ${statusVal === 'present' ? 'selected' : ''}>Present</option>
+            <option value="absent" ${statusVal === 'absent' ? 'selected' : ''}>Absent</option>
+            <option value="late" ${statusVal === 'late' ? 'selected' : ''}>Late</option>
+            <option value="excused" ${statusVal === 'excused' ? 'selected' : ''}>Excused</option>
+          </select></td>
+          <td><input type="text" id="att-remarks-${s.enrollment_id}" value="${remarksVal}" placeholder="Optional"></td>
+          <td><button class="btn btn-primary btn-sm" onclick="saveAttendance(${s.enrollment_id})">Save</button></td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="4">No students.</td></tr>';
+    }
+
+    async function saveAttendance(enrollmentId) {
+      const date = document.getElementById('attDate').value;
+      const status = document.getElementById(`att-status-${enrollmentId}`).value;
+      const remarks = document.getElementById(`att-remarks-${enrollmentId}`).value;
+
+      const res = await api(`${API}/attendance`, 'POST', {
+        enrollment_id: enrollmentId, date_attended: date, status, remarks,
+      });
+      if (res && !res.error) {
+        showAlert('Attendance saved');
+      } else {
+        showAlert(res?.error || 'Failed', 'error');
+      }
+    }
+
+    async function loadGradeStudents() {
+      const classId = document.getElementById('gradeClassSelect').value;
+      const subjectId = document.getElementById('gradeSubjectSelect').value;
+      const term = document.getElementById('gradeTerm').value;
+      if (!classId || !subjectId) return;
+
+      const students = await api(`${API}/students?class_id=${classId}`);
+      if (!students) return;
+
+      // Load existing grades
+      const existing = await api(`${API}/grades?class_id=${classId}&subject_id=${subjectId}`);
+      const gradeMap = new Map();
+      if (existing) existing.forEach(g => {
+        if (g.term === term) gradeMap.set(g.enrollment_id || 0, g);
+      });
+
+      document.getElementById('gradesTable').innerHTML = students.map(s => {
+        const g = gradeMap.get(s.enrollment_id);
+        return `<tr>
+          <td>${s.first_name} ${s.last_name}</td>
+          <td><input type="number" id="grade-marks-${s.enrollment_id}" value="${g ? g.marks || '' : ''}" step="any" style="width:80px" ${gradeEditEnabled ? '' : 'disabled'}></td>
+          <td><input type="text" id="grade-letter-${s.enrollment_id}" value="${g ? g.grade_letter || '' : ''}" style="width:60px" ${gradeEditEnabled ? '' : 'disabled'}></td>
+          <td><input type="text" id="grade-remarks-${s.enrollment_id}" value="${g ? g.remarks || '' : ''}" placeholder="Optional" ${gradeEditEnabled ? '' : 'disabled'}></td>
+          <td><button class="btn btn-primary btn-sm" onclick="saveGrade(${s.enrollment_id})" ${gradeEditEnabled ? '' : 'disabled'}>Save</button></td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="5">No students.</td></tr>';
+    }
+
+    async function saveGrade(enrollmentId) {
+      if (!gradeEditEnabled) {
+        showAlert('Grade entry is locked by admin', 'error');
+        return;
+      }
+      const subjectId = document.getElementById('gradeSubjectSelect').value;
+      const term = document.getElementById('gradeTerm').value;
+      const marks = document.getElementById(`grade-marks-${enrollmentId}`).value;
+      const gradeLetter = document.getElementById(`grade-letter-${enrollmentId}`).value;
+      const remarks = document.getElementById(`grade-remarks-${enrollmentId}`).value;
+
+      const res = await api(`${API}/grades`, 'POST', {
+        enrollment_id: enrollmentId, subject_id: subjectId, term,
+        marks: marks || null, grade_letter: gradeLetter || null, remarks: remarks || null,
+      });
+      if (res && !res.error) {
+        showAlert(res.message || 'Grade change submitted for admin approval');
+      } else {
+        showAlert(res?.error || 'Failed', 'error');
+      }
+    }
+
+    // ── Homework ─────────────────────────────────
+    async function loadHomework() {
+      const data = await api(`${API}/homework`);
+      if (!data) return;
+      myHomework = {};
+      data.forEach(h => { myHomework[h.homework_id] = h; });
+      document.getElementById('homeworkTable').innerHTML = data.map(h => `<tr>
+        <td>${h.title}</td><td>${h.subject_name}</td><td>${h.class_name}</td>
+        <td>${h.due_date ? h.due_date.split('T')[0] : '-'}</td>
+        <td>${h.created_at ? h.created_at.split('T')[0] : ''}</td>
+        <td>
+          <button class="btn btn-success btn-sm" onclick="editHomeworkItem(${h.homework_id})">Update</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteHomeworkItem(${h.homework_id})">Delete</button>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="6">No homework posted yet.</td></tr>';
+
+      populateHomeworkClassOptions();
+      syncHomeworkSubjectsByClass();
+    }
+
+    function openHomeworkForm() {
+      document.getElementById('homeworkFormContainer').style.display = 'block';
+      populateHomeworkClassOptions();
+      syncHomeworkSubjectsByClass();
+    }
+
+    function closeHomeworkForm() {
+      document.getElementById('homeworkFormContainer').style.display = 'none';
+      document.getElementById('homeworkForm').reset();
+    }
+
+    document.getElementById('homeworkForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = {
+        class_id: document.getElementById('hwClassSelect').value,
+        subject_id: document.getElementById('hwSubjectSelect').value,
+        title: document.getElementById('hwTitle').value,
+        description: document.getElementById('hwDescription').value || null,
+        due_date: document.getElementById('hwDueDate').value || null,
+      };
+      const res = await api(`${API}/homework`, 'POST', body);
+      if (res && !res.error) {
+        showAlert('Homework added');
+        closeHomeworkForm();
+        loadHomework();
+      } else {
+        showAlert(res?.error || 'Failed to add homework', 'error');
+      }
+    });
+
+    async function deleteHomeworkItem(id) {
+      if (!confirm('Delete this homework?')) return;
+      const res = await api(`${API}/homework/${id}`, 'DELETE');
+      if (res && !res.error) {
+        showAlert('Homework deleted');
+        loadHomework();
+      } else {
+        showAlert(res?.error || 'Delete failed', 'error');
+      }
+    }
+
+    async function editHomeworkItem(id) {
+      const current = myHomework[id];
+      if (!current) return;
+      const title = prompt('Update title:', current.title || '');
+      if (title === null) return;
+      const description = prompt('Update description (optional):', current.description || '');
+      if (description === null) return;
+      const currentDue = current.due_date ? current.due_date.split('T')[0] : '';
+      const dueDate = prompt('Update due date (YYYY-MM-DD, optional):', currentDue);
+      if (dueDate === null) return;
+
+      const payload = {
+        title: title.trim(),
+        description: description.trim() || null,
+        due_date: dueDate.trim() || null,
+      };
+
+      const res = await api(`${API}/homework/${id}`, 'PUT', payload);
+      if (res && !res.error) {
+        showAlert('Homework updated');
+        loadHomework();
+      } else {
+        showAlert(res?.error || 'Update failed', 'error');
+      }
+    }
+
+    // ── Messages ─────────────────────────────────
+    async function loadMessageParents() {
+      const data = await api(`${API}/messages/parents`);
+      if (!data) return;
+      const sel = document.getElementById('msgParentSelect');
+      sel.innerHTML = '<option value="">Choose parent...</option>' + data.map(p =>
+        `<option value="${p.user_id}">${p.parent_name || p.username} (${p.username}) - ${p.children || 'No child info'}</option>`
+      ).join('');
+    }
+
+    async function loadTeacherMessages() {
+      await loadMessageParents();
+      const data = await api(`${API}/messages`);
+      if (!data) return;
+      document.getElementById('teacherConversation').style.display = 'none';
+      document.getElementById('teacherMessageListWrap').style.display = 'block';
+      document.getElementById('teacherMessagesTable').innerHTML = data.map(m => {
+        const date = m.created_at ? new Date(m.created_at).toLocaleString() : '';
+        return `<tr>
+          <td>${m.message_id}</td>
+          <td>${m.sender_name || '-'}</td>
+          <td>${m.recipient_name || '-'}</td>
+          <td>${m.subject || '-'}</td>
+          <td>${date}</td>
+          <td><button class="btn btn-sm" onclick="openTeacherConversation(${m.message_id})">Open</button></td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="6">No messages yet.</td></tr>';
+    }
+
+    async function sendParentMessage() {
+      const recipient_id = document.getElementById('msgParentSelect').value;
+      const subject = document.getElementById('msgSubject').value.trim();
+      const body = document.getElementById('msgBody').value.trim();
+      if (!recipient_id || !body) {
+        showAlert('Parent and message body are required.', 'error');
+        return;
+      }
+      const res = await api(`${API}/messages/private`, 'POST', { recipient_id, subject, body });
+      if (res && !res.error) {
+        showAlert('Message sent');
+        document.getElementById('msgSubject').value = '';
+        document.getElementById('msgBody').value = '';
+        loadTeacherMessages();
+      } else {
+        showAlert(res?.error || 'Failed to send message', 'error');
+      }
+    }
+
+    async function openTeacherConversation(id) {
+      const data = await api(`${API}/messages/${id}/conversation`);
+      if (!data) return;
+
+      const user = JSON.parse(localStorage.getItem('user'));
+      const myId = user.user_id;
+      const conv = document.getElementById('teacherConversation');
+
+      document.getElementById('teacherMessageListWrap').style.display = 'none';
+      conv.style.display = 'block';
+
+      const firstMsg = data[0];
+      const thread = data.map(m => {
+        const isMine = m.sender_id === myId;
+        const time = m.created_at ? new Date(m.created_at).toLocaleString() : '';
+        return `<div class="msg-bubble ${isMine ? 'sent' : 'received'}">
+          <div class="bubble-sender">${m.sender_name || 'User'}</div>
+          ${m.body || ''}
+          <div class="bubble-time">${time}</div>
+        </div>`;
+      }).join('');
+
+      conv.innerHTML = `
+        <div class="conversation-view">
+          <h3><button class="back-btn" onclick="backToTeacherMessages()">&#8592;</button> ${firstMsg?.subject || 'Conversation'}</h3>
+          <div class="msg-thread">${thread}</div>
+          <div class="reply-box">
+            <textarea id="teacherReplyBody" rows="2" placeholder="Type reply..."></textarea>
+            <button class="btn btn-primary" onclick="sendTeacherReply(${id})">Reply</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function backToTeacherMessages() {
+      document.getElementById('teacherConversation').style.display = 'none';
+      document.getElementById('teacherMessageListWrap').style.display = 'block';
+      loadTeacherMessages();
+    }
+
+    async function sendTeacherReply(messageId) {
+      const body = document.getElementById('teacherReplyBody').value.trim();
+      if (!body) return;
+      const res = await api(`${API}/messages/${messageId}/reply`, 'POST', { body });
+      if (res && !res.error) {
+        openTeacherConversation(messageId);
+      } else {
+        showAlert(res?.error || 'Reply failed', 'error');
+      }
+    }
+
+    // Initial load
+    loadAssignments();
+  </script>
+</body>
+</html>

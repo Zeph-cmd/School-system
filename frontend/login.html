@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - School Management</title>
+  <link rel="stylesheet" href="/styles/main.css">
+  <style>
+    /* Role Picker */
+    .role-picker { display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem; flex-wrap: wrap; }
+    .role-card {
+      flex: 1; min-width: 100px; max-width: 140px; padding: 1.25rem 0.75rem;
+      border: 2px solid var(--border); border-radius: 10px; cursor: pointer;
+      text-align: center; transition: all 0.2s; background: var(--card);
+    }
+    .role-card:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(37,99,235,0.15); }
+    .role-card.selected { border-color: var(--primary); background: #eff6ff; box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }
+    .role-card .role-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+    .role-card .role-name { font-weight: 600; font-size: 0.9rem; color: var(--text); }
+    /* Steps */
+    .step { display: none; }
+    .step.active { display: block; }
+    .step-indicator { text-align: center; font-size: 0.8rem; color: var(--text-light); margin-bottom: 1rem; }
+    .back-link { cursor: pointer; color: var(--primary); font-size: 0.85rem; display: inline-block; margin-bottom: 1rem; }
+    .back-link:hover { text-decoration: underline; }
+    /* Toggle */
+    .toggle-link { text-align: center; margin-top: 1rem; font-size: 0.85rem; color: var(--text-light); }
+    .toggle-link a { color: var(--primary); cursor: pointer; text-decoration: none; font-weight: 500; }
+    .toggle-link a:hover { text-decoration: underline; }
+    /* Parent fields */
+    .parent-fields { display: none; }
+    .parent-fields.show { display: block; }
+    .login-card { max-width: 450px; }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-card">
+      <h1>School Management</h1>
+      <div id="alert"></div>
+
+      <!-- ── LOGIN FLOW ─────────────────────────────── -->
+      <div id="loginFlow">
+        <!-- Step 1: Choose Role -->
+        <div id="loginStep1" class="step active">
+          <p class="subtitle">Select your role to continue</p>
+          <div class="role-picker" id="loginRolePicker">
+            <div class="role-card" data-role="admin" onclick="selectLoginRole(this)">
+              <div class="role-icon">&#128188;</div>
+              <div class="role-name">Admin</div>
+            </div>
+            <div class="role-card" data-role="teacher" onclick="selectLoginRole(this)">
+              <div class="role-icon">&#128105;&#8205;&#127979;</div>
+              <div class="role-name">Teacher</div>
+            </div>
+            <div class="role-card" data-role="parent" onclick="selectLoginRole(this)">
+              <div class="role-icon">&#128106;</div>
+              <div class="role-name">Parent</div>
+            </div>
+          </div>
+          <div class="toggle-link">New here? <a onclick="showRegister()">Create an account</a></div>
+        </div>
+
+        <!-- Step 2: Enter Credentials -->
+        <div id="loginStep2" class="step">
+          <span class="back-link" onclick="backToRolePick('login')">&larr; Back</span>
+          <p class="subtitle">Sign in as <strong id="loginRoleLabel"></strong></p>
+          <form id="loginForm">
+            <div class="form-group">
+              <label for="loginUsername">Username</label>
+              <input type="text" id="loginUsername" required autocomplete="username">
+            </div>
+            <div class="form-group" id="loginEmailGroup" style="display:none;">
+              <label for="loginEmail">Email</label>
+              <input type="email" id="loginEmail" autocomplete="email">
+            </div>
+            <div class="form-group" id="loginPasswordGroup" style="display:none;">
+              <label for="loginPassword">Password</label>
+              <input type="password" id="loginPassword" autocomplete="current-password">
+            </div>
+            <div class="toggle-link" id="adminForgotWrap" style="display:none; text-align:right; margin: -0.2rem 0 0.5rem 0;">
+              <a onclick="adminForgotPassword()">Forgot password?</a>
+            </div>
+            <div class="toggle-link" id="roleForgotWrap" style="display:none; text-align:right; margin: -0.2rem 0 0.5rem 0;">
+              <a onclick="roleForgotCredentials()">Forgot credentials?</a>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%; margin-top:0.5rem">Sign In</button>
+          </form>
+          <div class="toggle-link">New here? <a onclick="showRegister()">Create an account</a></div>
+        </div>
+      </div>
+
+      <!-- ── REGISTER FLOW ──────────────────────────── -->
+      <div id="registerFlow" style="display:none">
+        <!-- Step 1: Choose Role -->
+        <div id="regStep1" class="step active">
+          <p class="subtitle">Choose your role to register</p>
+          <div class="role-picker" id="regRolePicker">
+            <div class="role-card" data-role="teacher" onclick="selectRegRole(this)">
+              <div class="role-icon">&#128105;&#8205;&#127979;</div>
+              <div class="role-name">Teacher</div>
+            </div>
+            <div class="role-card" data-role="parent" onclick="selectRegRole(this)">
+              <div class="role-icon">&#128106;</div>
+              <div class="role-name">Parent</div>
+            </div>
+          </div>
+          <div class="toggle-link">Already have an account? <a onclick="showLogin()">Sign in</a></div>
+        </div>
+
+        <!-- Step 2: Registration Form -->
+        <div id="regStep2" class="step">
+          <span class="back-link" onclick="backToRolePick('register')">&larr; Back</span>
+          <p class="subtitle">Register as <strong id="regRoleLabel"></strong></p>
+          <form id="registerForm">
+            <div class="form-group">
+              <label>Username</label>
+              <input type="text" id="regUsername" required autocomplete="username">
+            </div>
+            <div class="form-group">
+              <label>Password</label>
+              <input type="password" id="regPassword" required autocomplete="new-password">
+            </div>
+            <div class="form-group">
+              <label>First Name</label>
+              <input type="text" id="regFirstName" required>
+            </div>
+            <div class="form-group">
+              <label>Last Name</label>
+              <input type="text" id="regLastName" required>
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <input type="email" id="regEmail" required>
+            </div>
+            <div class="form-group">
+              <label>Phone</label>
+              <input type="text" id="regPhone" required>
+            </div>
+
+            <div id="teacherFields" class="parent-fields">
+              <hr style="margin: 1rem 0; border: none; border-top: 1px solid var(--border);">
+              <p style="font-size:0.85rem; color:var(--text-light); margin-bottom:0.75rem;">
+                Confirm your staff record details:
+              </p>
+              <div class="form-group">
+                <label>Employee Number</label>
+                <input type="text" id="regEmployeeNumber" placeholder="Must match school record">
+              </div>
+            </div>
+
+            <!-- Parent-only fields -->
+            <div id="parentFields" class="parent-fields">
+              <hr style="margin: 1rem 0; border: none; border-top: 1px solid var(--border);">
+              <p style="font-size:0.85rem; color:var(--text-light); margin-bottom:0.75rem;">
+                Confirm your child's school record details:
+              </p>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Student First Name</label>
+                  <input type="text" id="regStudentFirst">
+                </div>
+                <div class="form-group">
+                  <label>Student Last Name</label>
+                  <input type="text" id="regStudentLast">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Student Admission Number</label>
+                  <input type="text" id="regStudentAdmission" placeholder="Example: ADM-2026-001">
+                </div>
+                <div class="form-group">
+                  <label>Guardian Name</label>
+                  <input type="text" id="regGuardianName" placeholder="Must match school record">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Your relationship</label>
+                <select id="regRelationship">
+                  <option value="">Select...</option>
+                  <option>Father</option><option>Mother</option><option>Guardian</option><option>Other</option>
+                </select>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width:100%; margin-top:0.5rem">Submit Registration</button>
+          </form>
+          <div class="toggle-link">Already have an account? <a onclick="showLogin()">Sign in</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const alertDiv = document.getElementById('alert');
+    let selectedLoginRole = null;
+    let selectedRegRole = null;
+
+    // If already logged in, redirect
+    const token = localStorage.getItem('token');
+    const userData = localStorage.getItem('user');
+    if (token && userData) {
+      try {
+        const user = JSON.parse(userData);
+        redirectByRole(user.roles);
+      } catch(e) { /* ignore */ }
+    }
+
+    // ── Show / Hide Flows ───────────────────────────
+    function showRegister() {
+      alertDiv.innerHTML = '';
+      document.getElementById('loginFlow').style.display = 'none';
+      document.getElementById('registerFlow').style.display = 'block';
+      // reset register to step 1
+      document.getElementById('regStep1').classList.add('active');
+      document.getElementById('regStep2').classList.remove('active');
+      selectedRegRole = null;
+      document.querySelectorAll('#regRolePicker .role-card').forEach(c => c.classList.remove('selected'));
+    }
+
+    function showLogin() {
+      alertDiv.innerHTML = '';
+      document.getElementById('registerFlow').style.display = 'none';
+      document.getElementById('loginFlow').style.display = 'block';
+      // reset login to step 1
+      document.getElementById('loginStep1').classList.add('active');
+      document.getElementById('loginStep2').classList.remove('active');
+      selectedLoginRole = null;
+      document.querySelectorAll('#loginRolePicker .role-card').forEach(c => c.classList.remove('selected'));
+    }
+
+    function backToRolePick(flow) {
+      alertDiv.innerHTML = '';
+      if (flow === 'login') {
+        document.getElementById('loginStep2').classList.remove('active');
+        document.getElementById('loginStep1').classList.add('active');
+      } else {
+        document.getElementById('regStep2').classList.remove('active');
+        document.getElementById('regStep1').classList.add('active');
+      }
+    }
+
+    // ── Login Role Selection ────────────────────────
+    function selectLoginRole(el) {
+      document.querySelectorAll('#loginRolePicker .role-card').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+      selectedLoginRole = el.dataset.role;
+      document.getElementById('loginRoleLabel').textContent = selectedLoginRole.charAt(0).toUpperCase() + selectedLoginRole.slice(1);
+
+      const emailGroup = document.getElementById('loginEmailGroup');
+      const passwordGroup = document.getElementById('loginPasswordGroup');
+      const forgotWrap = document.getElementById('adminForgotWrap');
+      const roleForgotWrap = document.getElementById('roleForgotWrap');
+      const emailInput = document.getElementById('loginEmail');
+      const passwordInput = document.getElementById('loginPassword');
+      if (selectedLoginRole === 'admin') {
+        passwordGroup.style.display = 'block';
+        emailGroup.style.display = 'none';
+        forgotWrap.style.display = 'block';
+        roleForgotWrap.style.display = 'none';
+        passwordInput.required = true;
+        emailInput.required = false;
+        emailInput.value = '';
+      } else {
+        passwordGroup.style.display = 'none';
+        emailGroup.style.display = 'block';
+        forgotWrap.style.display = 'none';
+        roleForgotWrap.style.display = 'block';
+        passwordInput.required = false;
+        emailInput.required = true;
+        passwordInput.value = '';
+      }
+
+      // move to step 2
+      document.getElementById('loginStep1').classList.remove('active');
+      document.getElementById('loginStep2').classList.add('active');
+      document.getElementById('loginUsername').focus();
+    }
+
+    // ── Register Role Selection ─────────────────────
+    function selectRegRole(el) {
+      document.querySelectorAll('#regRolePicker .role-card').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+      selectedRegRole = el.dataset.role;
+      document.getElementById('regRoleLabel').textContent = selectedRegRole.charAt(0).toUpperCase() + selectedRegRole.slice(1);
+      // show/hide parent fields
+      const pf = document.getElementById('parentFields');
+      const tf = document.getElementById('teacherFields');
+      if (selectedRegRole === 'parent') {
+        pf.classList.add('show');
+        tf.classList.remove('show');
+        document.getElementById('regStudentFirst').required = true;
+        document.getElementById('regStudentLast').required = true;
+        document.getElementById('regStudentAdmission').required = true;
+        document.getElementById('regGuardianName').required = true;
+        document.getElementById('regRelationship').required = true;
+        document.getElementById('regEmployeeNumber').required = false;
+      } else {
+        pf.classList.remove('show');
+        tf.classList.add('show');
+        document.getElementById('regStudentFirst').required = false;
+        document.getElementById('regStudentLast').required = false;
+        document.getElementById('regStudentAdmission').required = false;
+        document.getElementById('regGuardianName').required = false;
+        document.getElementById('regRelationship').required = false;
+        document.getElementById('regEmployeeNumber').required = true;
+      }
+      if (selectedRegRole === 'teacher') {
+        document.getElementById('regEmployeeNumber').required = true;
+      } else {
+        document.getElementById('regEmployeeNumber').required = false;
+      }
+      // move to step 2
+      document.getElementById('regStep1').classList.remove('active');
+      document.getElementById('regStep2').classList.add('active');
+      document.getElementById('regUsername').focus();
+    }
+
+    // ── Login Submit ────────────────────────────────
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      alertDiv.innerHTML = '';
+      const username = document.getElementById('loginUsername').value;
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPassword').value;
+
+      const payload = { username, role: selectedLoginRole };
+      if (selectedLoginRole === 'admin') payload.password = password;
+      else payload.email = email;
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alertDiv.innerHTML = `<div class="alert alert-error">${escapeHtml(data.error)}</div>`;
+          return;
+        }
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        redirectByRole(data.user.roles);
+      } catch (err) {
+        alertDiv.innerHTML = '<div class="alert alert-error">Connection error. Is the server running?</div>';
+      }
+    });
+
+    // ── Register Submit ─────────────────────────────
+    document.getElementById('registerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      alertDiv.innerHTML = '';
+
+      const body = {
+        username: document.getElementById('regUsername').value,
+        password: document.getElementById('regPassword').value,
+        first_name: document.getElementById('regFirstName').value,
+        last_name: document.getElementById('regLastName').value,
+        email: document.getElementById('regEmail').value,
+        phone: document.getElementById('regPhone').value,
+        role: selectedRegRole,
+      };
+      if (selectedRegRole === 'teacher') {
+        body.employee_number = document.getElementById('regEmployeeNumber').value;
+      }
+      if (selectedRegRole === 'parent') {
+        body.student_first_name = document.getElementById('regStudentFirst').value;
+        body.student_last_name = document.getElementById('regStudentLast').value;
+        body.student_admission_number = document.getElementById('regStudentAdmission').value;
+        body.guardian_name = document.getElementById('regGuardianName').value;
+        body.parent_relationship = document.getElementById('regRelationship').value;
+      }
+
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alertDiv.innerHTML = `<div class="alert alert-error">${escapeHtml(data.error)}</div>`;
+          return;
+        }
+        alertDiv.innerHTML = `<div class="alert alert-success">${escapeHtml(data.message)}</div>`;
+        // Reset form and go back to login after 2s
+        document.getElementById('registerForm').reset();
+        setTimeout(() => showLogin(), 3000);
+      } catch (err) {
+        alertDiv.innerHTML = '<div class="alert alert-error">Connection error. Is the server running?</div>';
+      }
+    });
+
+    async function adminForgotPassword() {
+      if (selectedLoginRole !== 'admin') return;
+      const email = prompt('Enter admin recovery email:');
+      if (email === null) return;
+      const newPassword = prompt('Enter new admin password (min 6 chars):');
+      if (newPassword === null) return;
+      try {
+        const res = await fetch('/api/auth/admin/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, new_password: newPassword }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alertDiv.innerHTML = `<div class="alert alert-error">${escapeHtml(data.error || 'Failed to reset password')}</div>`;
+          return;
+        }
+        alertDiv.innerHTML = `<div class="alert alert-success">${escapeHtml(data.message || 'Password reset successful')}</div>`;
+      } catch (err) {
+        alertDiv.innerHTML = '<div class="alert alert-error">Connection error. Is the server running?</div>';
+      }
+    }
+
+    async function roleForgotCredentials() {
+      if (selectedLoginRole !== 'teacher' && selectedLoginRole !== 'parent') return;
+
+      let body;
+      if (selectedLoginRole === 'parent') {
+        const childFirst = prompt('Enter child first name (exact as in school records):');
+        if (childFirst === null) return;
+        const childLast = prompt('Enter child last name (exact):');
+        if (childLast === null) return;
+        const childAdm = prompt('Enter child ADM number (exact):');
+        if (childAdm === null) return;
+
+        body = {
+          role: 'parent',
+          child_first_name: childFirst,
+          child_last_name: childLast,
+          child_admission_number: childAdm,
+        };
+      } else {
+        const firstName = prompt('Enter your first name (exact as school record):');
+        if (firstName === null) return;
+        const lastName = prompt('Enter your last name (exact):');
+        if (lastName === null) return;
+        const employeeNo = prompt('Enter your employee number (exact):');
+        if (employeeNo === null) return;
+
+        body = {
+          role: 'teacher',
+          first_name: firstName,
+          last_name: lastName,
+          employee_number: employeeNo,
+        };
+      }
+
+      try {
+        const res = await fetch('/api/auth/forgot-credentials', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alertDiv.innerHTML = `<div class="alert alert-error">${escapeHtml(data.error || 'No account found')}</div>`;
+          return;
+        }
+        const details = (data.accounts || []).map(a =>
+          `Username: ${escapeHtml(a.username || '-')} | Email: ${escapeHtml(a.email || '-')} | Status: ${escapeHtml(a.status || '-')}${a.phone ? ` | Phone: ${escapeHtml(a.phone)}` : ''}`
+        ).join('<br>');
+        alertDiv.innerHTML = `<div class="alert alert-success">${escapeHtml(data.message || 'Account found')}<br>${details}</div>`;
+      } catch (err) {
+        alertDiv.innerHTML = '<div class="alert alert-error">Connection error. Is the server running?</div>';
+      }
+    }
+
+    function redirectByRole(roles) {
+      if (roles.includes('admin')) {
+        window.location.href = '/admin';
+      } else if (roles.includes('teacher')) {
+        window.location.href = '/teacher';
+      } else if (roles.includes('parent')) {
+        window.location.href = '/parent';
+      } else {
+        alertDiv.innerHTML = '<div class="alert alert-error">No dashboard assigned for your role.</div>';
+      }
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

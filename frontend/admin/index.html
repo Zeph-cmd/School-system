@@ -1,0 +1,1519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - School Management</title>
+  <link rel="stylesheet" href="/styles/main.css">
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <h2>School Mgmt</h2>
+      <div class="role-badge">Admin Panel</div>
+      <nav>
+        <a href="#" data-section="dashboard" class="active">&#128202; <span>Dashboard</span></a>
+        <a href="#" data-section="students">&#127891; <span>Students</span></a>
+        <a href="#" data-section="teachers">&#128105;&#8205;&#127979; <span>Teachers</span></a>
+        <a href="#" data-section="parents">&#128106; <span>Parents</span></a>
+        <a href="#" data-section="classes">&#127979; <span>Classes</span></a>
+        <a href="#" data-section="subjects">&#128218; <span>Subjects</span></a>
+        <a href="#" data-section="fees">&#128176; <span>Fees</span></a>
+        <a href="#" data-section="assignments">&#128221; <span>Assignments</span></a>
+        <a href="#" data-section="homework">&#128218; <span>Homework</span></a>
+        <a href="#" data-section="approvals">&#128276; <span>Pending Accounts</span> <span class="notif-badge" id="approvalBadge" style="display:none"></span></a>
+        <a href="#" data-section="record">&#128196; <span>Record</span></a>
+        <a href="#" data-section="messages">&#128172; <span>Messages</span></a>
+        <a href="#" data-section="auditlogs">&#128203; <span>Audit Logs</span></a>
+      </nav>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <div id="alert"></div>
+
+      <div id="sec-dashboard" class="section active">
+        <h1>Dashboard Overview</h1>
+        <div class="record-card" style="margin-bottom:1rem; display:flex; align-items:center; justify-content:space-between; gap:1rem;">
+          <div>
+            <div style="font-weight:700;">Grade Edit Security</div>
+            <div id="gradeEditStatusText" style="color:var(--text-light); font-size:0.9rem;">Loading status...</div>
+          </div>
+          <button id="gradeEditToggleBtn" class="btn btn-danger" onclick="toggleGradeEditLock()">Lock Grades</button>
+        </div>
+        <div class="record-card" style="margin-bottom:1rem; display:flex; align-items:center; justify-content:space-between; gap:1rem;">
+          <div>
+            <div style="font-weight:700;">Admin Recovery Email</div>
+            <div id="adminRecoveryEmailText" style="color:var(--text-light); font-size:0.9rem;">Loading recovery email...</div>
+          </div>
+          <button class="btn btn-primary" onclick="changeRecoveryEmail()">Change</button>
+        </div>
+        <div class="stats-grid" id="statsGrid"></div>
+      </div>
+
+      <!-- Students Section -->
+      <div id="sec-students" class="section">
+        <h1>Students</h1>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="openModal('student')">+ Add Student</button>
+          <input type="text" id="studentSearch" placeholder="Search student name..." oninput="applyStudentFilters()" style="padding:0.5rem; border-radius:6px; border:1px solid var(--border); width:220px">
+          <select id="studentClassFilter" onchange="applyStudentFilters()" style="padding:0.5rem; border-radius:6px; border:1px solid var(--border)">
+            <option value="">All Classes</option>
+          </select>
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>ID</th><th>Adm No</th><th>Name</th><th>Gender</th><th>DOB</th><th>Guardian</th><th>Tuition</th><th>Status</th><th>Actions</th>
+          </tr></thead><tbody id="studentsTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Teachers Section -->
+      <div id="sec-teachers" class="section">
+        <h1>Teachers</h1>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="openModal('teacher')">+ Add Teacher</button>
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>ID</th><th>Emp No</th><th>Name</th><th>Gender</th><th>Phone</th><th>Status</th><th>Actions</th>
+          </tr></thead><tbody id="teachersTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Parents Section -->
+      <div id="sec-parents" class="section">
+        <h1>Parents</h1>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="openModal('parent')">+ Add Parent</button>
+          <input type="text" id="parentSearch" placeholder="Search parent name..." oninput="applyParentFilters()" style="padding:0.5rem; border-radius:6px; border:1px solid var(--border); width:220px">
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Relationship</th><th>Children</th><th>Actions</th>
+          </tr></thead><tbody id="parentsTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Classes Section -->
+      <div id="sec-classes" class="section">
+        <h1>Classes</h1>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="openModal('class')">+ Add Class</button>
+          <input type="text" id="classStudentSearch" placeholder="Search by student name, ID, or ADM..." style="padding:0.5rem; border-radius:6px; border:1px solid var(--border); width:260px">
+          <button class="btn btn-sm" onclick="lookupClassByStudent()">Find Student Class</button>
+          <button class="btn btn-sm" onclick="clearClassLookup()">Clear</button>
+        </div>
+        <div class="table-container" id="classLookupWrap" style="display:none; margin-bottom:1rem;">
+          <table><thead><tr>
+            <th>Student ID</th><th>ADM No</th><th>Student</th><th>Class ID</th><th>Class</th><th>Code</th><th>Level</th><th>Year</th><th>Status</th>
+          </tr></thead><tbody id="classLookupTable"></tbody></table>
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>ID</th><th>Name</th><th>Code</th><th>Level</th><th>Capacity</th><th>Actions</th>
+          </tr></thead><tbody id="classesTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Subjects Section -->
+      <div id="sec-subjects" class="section">
+        <h1>Subjects</h1>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="openModal('subject')">+ Add Subject</button>
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>ID</th><th>Code</th><th>Name</th><th>Active</th><th>Actions</th>
+          </tr></thead><tbody id="subjectsTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Fees Section -->
+      <div id="sec-fees" class="section">
+        <h1>Fees</h1>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="openModal('fee')">+ Add Fee</button>
+          <select id="feeClassFilter" onchange="applyFeeFilters()" style="padding:0.5rem; border-radius:6px; border:1px solid var(--border)">
+            <option value="">All Classes</option>
+          </select>
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>ID</th><th>Class</th><th>Student</th><th>Description</th><th>Due</th><th>Paid</th><th>Status</th><th>Actions</th>
+          </tr></thead><tbody id="feesTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Teaching Assignments Section -->
+      <div id="sec-assignments" class="section">
+        <h1>Teaching Assignments</h1>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="openModal('assignment')">+ Assign Teacher</button>
+          <input type="text" id="assignmentYearFilter" placeholder="Filter by academic year..." oninput="applyAssignmentFilters()" style="padding:0.5rem; border-radius:6px; border:1px solid var(--border); width:220px">
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>ID</th><th>Teacher</th><th>Emp No</th><th>Subject</th><th>Class</th><th>Year</th><th>Term</th><th>Actions</th>
+          </tr></thead><tbody id="assignmentsTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Homework Section -->
+      <div id="sec-homework" class="section">
+        <h1>Homework</h1>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>ID</th><th>Title</th><th>Subject</th><th>Class</th><th>Teacher</th><th>Due Date</th>
+          </tr></thead><tbody id="homeworkTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Pending Approvals Section -->
+      <div id="sec-approvals" class="section">
+        <h1>Pending Accounts</h1>
+        <div class="btn-group">
+          <select id="approvalRoleFilter" style="padding:0.5rem; border-radius:6px; border:1px solid var(--border)">
+            <option value="">All Roles</option>
+            <option value="student">Student</option>
+            <option value="parent">Parent</option>
+            <option value="teacher">Teacher</option>
+          </select>
+          <input type="text" id="approvalSearchFilter" placeholder="Search username/email..." style="padding:0.5rem; border-radius:6px; border:1px solid var(--border); width:220px">
+          <button class="btn btn-primary btn-sm" onclick="loadApprovals()">Apply</button>
+          <button class="btn btn-sm" onclick="clearApprovalsFilters()">Clear</button>
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>ID</th><th>Username</th><th>Role</th><th>Email</th><th>Phone</th><th>Student Name</th><th>Submitted</th><th>Status</th><th>Actions</th>
+          </tr></thead><tbody id="approvalsTable"></tbody></table>
+        </div>
+
+        <h2 style="margin-top:1.2rem;">Pending Grade Changes</h2>
+        <div class="btn-group">
+          <input type="text" id="gradeApprovalSearch" placeholder="Search student/ADM/teacher/subject..." style="padding:0.5rem; border-radius:6px; border:1px solid var(--border); width:260px">
+          <button class="btn btn-primary btn-sm" onclick="loadPendingGradeChanges()">Apply</button>
+          <button class="btn btn-sm" onclick="clearPendingGradeFilters()">Clear</button>
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>ID</th><th>Student</th><th>ADM</th><th>Class</th><th>Subject</th><th>Term</th><th>Marks</th><th>Grade</th><th>By Teacher</th><th>Submitted</th><th>Actions</th>
+          </tr></thead><tbody id="pendingGradeChangesTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Record Section -->
+      <div id="sec-record" class="section">
+        <h1>Student Record</h1>
+        <div class="record-search">
+          <div class="record-search form-row-3">
+            <div class="form-group"><label>Student ID</label><input type="number" id="recStudentId" placeholder="e.g. 1"></div>
+            <div class="form-group"><label>First Name</label><input type="text" id="recFirstName" placeholder="e.g. John"></div>
+            <div class="form-group"><label>Last Name</label><input type="text" id="recLastName" placeholder="e.g. Doe"></div>
+            <button class="btn btn-primary" onclick="loadRecord()">Search</button>
+          </div>
+        </div>
+        <div id="recordResult"></div>
+      </div>
+
+      <!-- Messages Section -->
+      <div id="sec-messages" class="section">
+        <h1>Messages</h1>
+        <div class="msg-tabs">
+          <button class="msg-tab active" onclick="switchMsgTab('broadcast')">Broadcast</button>
+          <button class="msg-tab" onclick="switchMsgTab('private')">Private</button>
+          <button class="msg-tab" onclick="switchMsgTab('inbox')">All Messages</button>
+        </div>
+
+        <div id="msgBroadcast">
+          <div class="msg-compose">
+            <h3>Send Broadcast to Class</h3>
+            <div class="form-group"><label>Class</label><select id="bcClassSelect"></select></div>
+            <div class="form-group"><label>Subject</label><input type="text" id="bcSubject" placeholder="Message subject"></div>
+            <div class="form-group"><label>Message</label><textarea id="bcBody" rows="4" placeholder="Type your broadcast message..."></textarea></div>
+            <button class="btn btn-primary" onclick="sendBroadcast()">Send Broadcast</button>
+          </div>
+        </div>
+
+        <div id="msgPrivate" style="display:none">
+          <div class="msg-compose">
+            <h3>Send Private Message</h3>
+            <div class="form-group"><label>Recipient Email</label><input type="email" id="pmRecipientEmail" placeholder="recipient@example.com"></div>
+            <div class="form-group"><label>Subject</label><input type="text" id="pmSubject" placeholder="Message subject"></div>
+            <div class="form-group"><label>Message</label><textarea id="pmBody" rows="4" placeholder="Type your private message..."></textarea></div>
+            <button class="btn btn-primary" onclick="sendPrivateMsg()">Send Message</button>
+          </div>
+        </div>
+
+        <div id="msgInbox" style="display:none">
+          <div class="msg-list" id="messagesList"></div>
+        </div>
+
+        <div id="msgConversation" style="display:none"></div>
+      </div>
+
+      <!-- Audit Logs Section -->
+      <div id="sec-auditlogs" class="section">
+        <h1>Audit Logs</h1>
+        <div class="btn-group">
+          <select id="auditAction" style="padding:0.5rem; border-radius:6px; border:1px solid var(--border)">
+            <option value="">All Actions</option>
+            <option value="CREATE">CREATE</option><option value="UPDATE">UPDATE</option>
+            <option value="DELETE">DELETE</option><option value="LOGIN">LOGIN</option>
+          </select>
+          <input type="text" id="auditTable" placeholder="Table name..." style="padding:0.5rem; border-radius:6px; border:1px solid var(--border); width:160px">
+          <button class="btn btn-primary btn-sm" onclick="loadAuditLogs()">Filter</button>
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>ID</th><th>User</th><th>Action</th><th>Table</th><th>Record</th><th>Time</th><th>Details</th>
+          </tr></thead><tbody id="auditLogsTable"></tbody></table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <h2 id="modalTitle">Add</h2>
+      <form id="modalForm"></form>
+    </div>
+  </div>
+
+  <script>
+    const API = '/api/admin';
+    const token = localStorage.getItem('token');
+    if (!token) { window.location.href = '/login'; }
+
+    // Verify user has admin role
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      try {
+        const user = JSON.parse(userData);
+        if (!user.roles || !user.roles.includes('admin')) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          window.location.href = '/login';
+        }
+      } catch (e) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
+    } else {
+      window.location.href = '/login';
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
+
+    // Shared cache used by update modals and table reloads.
+    const dataCache = {};
+
+    // ── Navigation ──────────────────────────────────
+    document.querySelectorAll('.sidebar nav a').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const section = link.dataset.section;
+        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.remove('active'));
+        document.getElementById(`sec-${section}`).classList.add('active');
+        link.classList.add('active');
+        loadSection(section);
+      });
+    });
+
+    function loadSection(section) {
+      const loaders = {
+        dashboard: loadDashboard,
+        students: loadStudents,
+        teachers: loadTeachers,
+        parents: loadParents,
+        classes: loadClasses,
+        subjects: loadSubjects,
+        fees: loadFees,
+        assignments: loadAssignments,
+        homework: loadHomework,
+        approvals: loadApprovals,
+        record: () => {},
+        messages: loadMessages,
+        auditlogs: loadAuditLogs,
+      };
+      if (loaders[section]) loaders[section]();
+    }
+
+    // ── API Helpers ─────────────────────────────────
+    async function api(url, method = 'GET', body = null) {
+      const opts = { method, headers };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(url, opts);
+      if (res.status === 401) { logout(); return null; }
+      if (res.status === 403) {
+        showAlert('Insufficient permissions. Please log in again as admin.', 'error');
+        setTimeout(() => logout(), 2000);
+        return null;
+      }
+      return res.json();
+    }
+
+    function showAlert(msg, type = 'success') {
+      const el = document.getElementById('alert');
+      el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+      setTimeout(() => el.innerHTML = '', 5000);
+    }
+
+    function logout() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+
+    function statusBadge(status) {
+      const cls = status === 'active' || status === 'paid' || status === 'present' ? 'badge-active' : 
+                  status === 'unpaid' ? 'badge-unpaid' : 'badge-inactive';
+      return `<span class="badge ${cls}">${status}</span>`;
+    }
+
+    function tuitionStatus(due, paid) {
+      const d = Number(due || 0);
+      const p = Number(paid || 0);
+      if (d <= 0) return 'null';
+      if (p >= d) return 'fully_paid';
+      return 'partial';
+    }
+
+    function tuitionStatusBadge(status) {
+      const s = status || 'null';
+      const cls = s === 'fully_paid'
+        ? 'badge-tuition-full'
+        : s === 'partial'
+          ? 'badge-tuition-partial'
+          : 'badge-tuition-null';
+      return `<span class="badge ${cls}">${s}</span>`;
+    }
+
+    function norm(v) {
+      return String(v || '').trim().toLowerCase();
+    }
+
+    function toggleTuitionRow(studentId) {
+      const row = document.getElementById(`tuitionRow-${studentId}`);
+      if (!row) return;
+      row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+    }
+
+    // ── Dashboard ───────────────────────────────────
+    async function loadDashboard() {
+      const data = await api(`${API}/dashboard`);
+      if (!data) return;
+      const grid = document.getElementById('statsGrid');
+      const outstanding = (parseFloat(data.total_fees_due) - parseFloat(data.total_fees_paid)).toFixed(2);
+      const tuitionOutstanding = (parseFloat(data.total_tuition_due || 0) - parseFloat(data.total_tuition_paid || 0)).toFixed(2);
+      grid.innerHTML = `
+        <div class="stat-card"><div class="label">Students</div><div class="value">${data.total_students}</div></div>
+        <div class="stat-card"><div class="label">Teachers</div><div class="value">${data.total_teachers}</div></div>
+        <div class="stat-card"><div class="label">Parents</div><div class="value">${data.total_parents}</div></div>
+        <div class="stat-card"><div class="label">Classes</div><div class="value">${data.total_classes}</div></div>
+        <div class="stat-card"><div class="label">Subjects</div><div class="value">${data.total_subjects}</div></div>
+        <div class="stat-card"><div class="label">Active Enrollments</div><div class="value">${data.active_enrollments}</div></div>
+        <div class="stat-card green"><div class="label">Fees Collected</div><div class="value">$${parseFloat(data.total_fees_paid).toLocaleString()}</div></div>
+        <div class="stat-card red"><div class="label">Outstanding Fees</div><div class="value">$${parseFloat(outstanding).toLocaleString()}</div></div>
+        <div class="stat-card green"><div class="label">Tuition Collected</div><div class="value">$${parseFloat(data.total_tuition_paid || 0).toLocaleString()}</div></div>
+        <div class="stat-card red"><div class="label">Outstanding Tuition</div><div class="value">$${parseFloat(tuitionOutstanding).toLocaleString()}</div></div>
+      `;
+      await loadGradeEditStatus();
+      await loadRecoveryEmailStatus();
+    }
+
+    async function loadGradeEditStatus() {
+      const data = await api(`${API}/grade-edit-status`);
+      if (!data) return;
+      const enabled = !!data.grade_edit_enabled;
+      const txt = document.getElementById('gradeEditStatusText');
+      const btn = document.getElementById('gradeEditToggleBtn');
+      if (txt) {
+        txt.textContent = enabled
+          ? 'Grade editing is currently OPEN for teachers.'
+          : 'Grade editing is currently LOCKED. Teachers can only view.';
+      }
+      if (btn) {
+        btn.textContent = enabled ? 'Lock Grades' : 'Unlock Grades';
+        btn.className = enabled ? 'btn btn-danger' : 'btn btn-success';
+      }
+    }
+
+    async function toggleGradeEditLock() {
+      const current = await api(`${API}/grade-edit-status`);
+      if (!current) return;
+      const next = !current.grade_edit_enabled;
+      const res = await api(`${API}/grade-edit-status`, 'PUT', { enabled: next });
+      if (res && !res.error) {
+        showAlert(res.message || 'Grade edit status updated');
+        loadGradeEditStatus();
+      } else {
+        showAlert(res?.error || 'Failed to update grade edit status', 'error');
+      }
+    }
+
+    async function loadRecoveryEmailStatus() {
+      const data = await api(`${API}/recovery-email`);
+      const textEl = document.getElementById('adminRecoveryEmailText');
+      if (!textEl) return;
+      if (!data || data.error) {
+        textEl.textContent = 'Unable to load recovery email.';
+        return;
+      }
+      textEl.textContent = data.is_set
+        ? `Configured: ${data.recovery_email_masked || '[hidden]'}`
+        : 'No recovery email configured.';
+    }
+
+    async function changeRecoveryEmail() {
+      const email = prompt('Enter new admin recovery email:');
+      if (email === null) return;
+      const currentPassword = prompt('Enter current admin password to confirm:');
+      if (currentPassword === null) return;
+      if (!email.trim()) {
+        showAlert('Recovery email cannot be empty', 'error');
+        return;
+      }
+      if (!currentPassword.trim()) {
+        showAlert('Current password is required', 'error');
+        return;
+      }
+      const res = await api(`${API}/recovery-email`, 'PUT', {
+        email: email.trim(),
+        current_password: currentPassword,
+      });
+      if (res && !res.error) {
+        showAlert(res.message || 'Recovery email updated');
+        loadRecoveryEmailStatus();
+      } else {
+        showAlert(res?.error || 'Failed to update recovery email', 'error');
+      }
+    }
+
+    // ── Students ────────────────────────────────────
+    async function loadStudents() {
+      const data = await api(`${API}/students`);
+      if (!data) return;
+      dataCache.students = {};
+      dataCache.studentsList = data;
+      data.forEach(s => dataCache.students[s.student_id] = s);
+      const classFilter = document.getElementById('studentClassFilter');
+      if (classFilter) {
+        const classes = [...new Map(data
+          .filter(s => s.current_class_id)
+          .map(s => [String(s.current_class_id), s.current_class_name || `Class ${s.current_class_id}`]))]
+          .sort((a, b) => a[1].localeCompare(b[1]));
+        classFilter.innerHTML = '<option value="">All Classes</option>' +
+          classes.map(([id, name]) => `<option value="${id}">${escHtml(name)}</option>`).join('');
+      }
+      applyStudentFilters();
+    }
+
+    function renderStudentsTable(rows) {
+      document.getElementById('studentsTable').innerHTML = rows.map(s => {
+        const tuitionDue = Number(s.tuition_amount_due || 0);
+        const tuitionPaid = Number(s.tuition_amount_paid || 0);
+        const tStatus = s.tuition_status || tuitionStatus(tuitionDue, tuitionPaid);
+        const reclassActions = [
+          `<a onclick="reclassifyStudent(${s.student_id}, 'promote')">Promote Next Class</a>`,
+          `<a onclick="reclassifyStudent(${s.student_id}, 'demote')">Demote Previous Class</a>`,
+          `<a onclick="reclassifyStudent(${s.student_id}, 'keep')">Keep Current Class</a>`
+        ].join('');
+        return `<tr>
+          <td>${s.student_id}</td><td>${s.admission_number}</td>
+          <td>${s.first_name} ${s.last_name}</td><td>${s.gender}</td>
+          <td>${s.date_of_birth?.split('T')[0] || ''}</td><td>${escHtml(s.guardian_name) || '-'}</td>
+          <td><button class="btn btn-sm" onclick="toggleTuitionRow(${s.student_id})">View</button></td>
+          <td>${statusBadge(s.status)}</td>
+          <td>${editDropdown('students', s.student_id, { extraActions: reclassActions })}</td>
+        </tr>
+        <tr id="tuitionRow-${s.student_id}" style="display:none;background:#fafafa;">
+          <td colspan="9" style="padding:0.6rem 1rem;">
+            <strong>Tuition</strong> |
+            Due: $${tuitionDue.toFixed(2)} |
+            Paid: $${tuitionPaid.toFixed(2)} |
+            Status: ${tuitionStatusBadge(tStatus)}
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    function applyStudentFilters() {
+      const rows = dataCache.studentsList || [];
+      const q = norm(document.getElementById('studentSearch')?.value);
+      const cls = document.getElementById('studentClassFilter')?.value || '';
+      const filtered = rows.filter(s => {
+        const name = norm(`${s.first_name || ''} ${s.last_name || ''} ${s.other_name || ''}`);
+        const nameOk = !q || name.includes(q);
+        const classOk = !cls || String(s.current_class_id || '') === String(cls);
+        return nameOk && classOk;
+      });
+      renderStudentsTable(filtered);
+    }
+
+    // ── Teachers ────────────────────────────────────
+    async function loadTeachers() {
+      const data = await api(`${API}/teachers`);
+      if (!data) return;
+      dataCache.teachers = {};
+      data.forEach(t => dataCache.teachers[t.teacher_id] = t);
+      document.getElementById('teachersTable').innerHTML = data.map(t => `<tr>
+        <td>${t.teacher_id}</td><td>${t.employee_number}</td>
+        <td>${t.first_name} ${t.last_name}</td><td>${t.gender || '-'}</td>
+        <td>${t.phone}</td><td>${statusBadge(t.status)}</td>
+        <td>${editDropdown('teachers', t.teacher_id)}</td>
+      </tr>`).join('');
+    }
+
+    // ── Parents ─────────────────────────────────────
+    async function loadParents() {
+      const data = await api(`${API}/parents`);
+      if (!data) return;
+      dataCache.parents = {};
+      dataCache.parentsList = data;
+      data.forEach(p => dataCache.parents[p.parent_id] = p);
+      applyParentFilters();
+    }
+
+    function applyParentFilters() {
+      const q = norm(document.getElementById('parentSearch')?.value);
+      const rows = (dataCache.parentsList || []).filter(p => {
+        const name = norm(`${p.first_name || ''} ${p.last_name || ''}`);
+        return !q || name.includes(q);
+      });
+      document.getElementById('parentsTable').innerHTML = rows.map(p => `<tr>
+        <td>${p.parent_id}</td>
+        <td>${p.first_name} ${p.last_name}</td><td>${p.phone}</td>
+        <td>${p.email || '-'}</td><td>${p.relationship || '-'}</td>
+        <td>${escHtml(p.children_names) || '-'}</td>
+        <td>${editDropdown('parents', p.parent_id)}</td>
+      </tr>`).join('');
+    }
+
+    // ── Classes ─────────────────────────────────────
+    async function loadClasses() {
+      const data = await api(`${API}/classes`);
+      if (!data) return;
+      dataCache.classes = {};
+      data.forEach(c => dataCache.classes[c.class_id] = c);
+      document.getElementById('classesTable').innerHTML = data.map(c => `<tr>
+        <td>${c.class_id}</td><td>${c.class_name}</td><td>${c.class_code}</td>
+        <td>${c.level}</td><td>${c.capacity || '-'}</td>
+        <td>${editDropdown('classes', c.class_id, { showDelete: false, extraActions: `<a onclick="viewClassStudentsById(${c.class_id})">View Class</a>` })}</td>
+      </tr>`).join('');
+    }
+
+    async function lookupClassByStudent() {
+      const q = document.getElementById('classStudentSearch')?.value?.trim() || '';
+      if (!q) {
+        showAlert('Enter a student name, ID, or admission number.', 'error');
+        return;
+      }
+      const data = await api(`${API}/classes/student-lookup?q=${encodeURIComponent(q)}`);
+      if (!data) return;
+      const wrap = document.getElementById('classLookupWrap');
+      const table = document.getElementById('classLookupTable');
+      wrap.style.display = 'block';
+      table.innerHTML = data.map(r => `<tr>
+        <td>${r.student_id}</td>
+        <td>${escHtml(r.admission_number) || '-'}</td>
+        <td>${escHtml(r.first_name)} ${escHtml(r.last_name)}</td>
+        <td>${r.class_id || '-'}</td>
+        <td>${escHtml(r.class_name) || '-'}</td>
+        <td>${escHtml(r.class_code) || '-'}</td>
+        <td>${escHtml(r.level) || '-'}</td>
+        <td>${escHtml(r.academic_year) || '-'}</td>
+        <td>${statusBadge(r.enrollment_status || 'inactive')}</td>
+      </tr>`).join('') || '<tr><td colspan="9">No student/class match found.</td></tr>';
+    }
+
+    function clearClassLookup() {
+      const input = document.getElementById('classStudentSearch');
+      const wrap = document.getElementById('classLookupWrap');
+      const table = document.getElementById('classLookupTable');
+      if (input) input.value = '';
+      if (table) table.innerHTML = '';
+      if (wrap) wrap.style.display = 'none';
+    }
+
+    async function viewClassStudentsById(classId) {
+      const classInfo = dataCache.classes?.[classId];
+      const className = classInfo?.class_name || `Class ${classId}`;
+      const allEnrollments = await api(`${API}/enrollments`);
+      if (!allEnrollments || !Array.isArray(allEnrollments)) {
+        showAlert('Unable to load class students', 'error');
+        return;
+      }
+
+      const rows = allEnrollments.filter(e => String(e.class_id) === String(classId));
+      const body = rows.length === 0
+        ? '<div class="alert">No students enrolled in this class.</div>'
+        : `<div class="table-container"><table><thead><tr><th>Student</th><th>Year</th><th>Status</th></tr></thead><tbody>${rows.map(r => `<tr><td>${escHtml(r.student_name || '-')}</td><td>${escHtml(r.academic_year || '-')}</td><td>${statusBadge(r.status || '-')}</td></tr>`).join('')}</tbody></table></div>`;
+
+      document.getElementById('modalTitle').textContent = `Class Students - ${className}`;
+      const form = document.getElementById('modalForm');
+      form.innerHTML = `${body}<div class="modal-actions"><button type="button" class="btn" onclick="closeModal()">Close</button></div>`;
+      form.onsubmit = (e) => e.preventDefault();
+      document.getElementById('modalOverlay').classList.add('show');
+    }
+
+    // ── Subjects ────────────────────────────────────
+    async function loadSubjects() {
+      const data = await api(`${API}/subjects`);
+      if (!data) return;
+      dataCache.subjects = {};
+      data.forEach(s => dataCache.subjects[s.subject_id] = s);
+      document.getElementById('subjectsTable').innerHTML = data.map(s => `<tr>
+        <td>${s.subject_id}</td><td>${s.subject_code}</td><td>${s.subject_name}</td>
+        <td>${s.is_active ? '&#9989;' : '&#10060;'}</td>
+        <td>${editDropdown('subjects', s.subject_id)}</td>
+      </tr>`).join('');
+    }
+
+    // ── Fees ────────────────────────────────────────
+    async function loadFees() {
+      const data = await api(`${API}/fees`);
+      if (!data) return;
+      dataCache.fees = {};
+      dataCache.feesList = data;
+      data.forEach(f => dataCache.fees[f.fee_id] = f);
+      const feeClassFilter = document.getElementById('feeClassFilter');
+      if (feeClassFilter) {
+        const classes = [...new Set(data.map(f => f.class_name).filter(Boolean))].sort();
+        feeClassFilter.innerHTML = '<option value="">All Classes</option>' +
+          classes.map(cn => `<option value="${escHtml(cn)}">${escHtml(cn)}</option>`).join('');
+      }
+      applyFeeFilters();
+    }
+
+    function applyFeeFilters() {
+      const cls = document.getElementById('feeClassFilter')?.value || '';
+      const rows = (dataCache.feesList || []).filter(f => !cls || String(f.class_name || '') === String(cls));
+      document.getElementById('feesTable').innerHTML = rows.map(f => `<tr>
+        <td>${f.fee_id}</td><td>${f.class_name || '-'}</td><td>${f.student_name}</td><td>${f.description || '-'}</td>
+        <td>$${parseFloat(f.amount_due).toFixed(2)}</td><td>$${parseFloat(f.amount_paid).toFixed(2)}</td>
+        <td>${statusBadge(f.status)}</td>
+        <td><button class="btn btn-success btn-sm" onclick="openUpdateModal('fees',${f.fee_id})">Update</button></td>
+      </tr>`).join('');
+    }
+
+    // ── Assignments ─────────────────────────────────
+    async function loadAssignments() {
+      const data = await api(`${API}/assignments`);
+      if (!data) return;
+      dataCache.assignments = {};
+      dataCache.assignmentsList = data;
+      data.forEach(a => dataCache.assignments[a.assignment_id] = a);
+      applyAssignmentFilters();
+    }
+
+    function applyAssignmentFilters() {
+      const yearFilter = norm(document.getElementById('assignmentYearFilter')?.value);
+      const rows = (dataCache.assignmentsList || []).filter(a => {
+        const year = norm(a.academic_year);
+        return !yearFilter || year.includes(yearFilter);
+      });
+      document.getElementById('assignmentsTable').innerHTML = rows.map(a => `<tr>
+        <td>${a.assignment_id}</td><td>${a.teacher_name}</td>
+        <td>${a.employee_number || '-'}</td><td>${a.subject_name}</td>
+        <td>${a.class_name}</td><td>${a.academic_year}</td><td>${a.term || '-'}</td>
+        <td>${editDropdown('assignments', a.assignment_id)}</td>
+      </tr>`).join('');
+    }
+
+    // ── Homework ────────────────────────────────────
+    async function loadHomework() {
+      const data = await api(`${API}/homework`);
+      if (!data) return;
+      document.getElementById('homeworkTable').innerHTML = data.map(h => `<tr>
+        <td>${h.homework_id}</td><td>${h.title}</td><td>${h.subject_name}</td>
+        <td>${h.class_name}</td><td>${h.teacher_name}</td>
+        <td>${h.due_date ? h.due_date.split('T')[0] : '-'}</td>
+      </tr>`).join('') || '<tr><td colspan="6">No homework posted.</td></tr>';
+    }
+
+    // ── Delete ──────────────────────────────────────
+    async function deleteItem(resource, id) {
+      if (!confirm('Are you sure?')) return;
+      const res = await api(`${API}/${resource}/${id}`, 'DELETE');
+      if (res && !res.error) {
+        showAlert('Deleted successfully');
+        loadSection(resource);
+      } else {
+        showAlert(res?.error || 'Delete failed', 'error');
+      }
+    }
+
+    // ── Edit Dropdown ───────────────────────────────
+    function editDropdown(resource, id, options = {}) {
+      const showDelete = options.showDelete !== false;
+      const extraActions = options.extraActions || '';
+      const deleteAction = showDelete
+        ? `<a class="text-danger" onclick="deleteItem('${resource}',${id})">Delete</a>`
+        : '';
+      return `<div class="action-dropdown">
+        <button class="btn btn-primary btn-sm" onclick="toggleDropdown(this)">Edit &#9662;</button>
+        <div class="dropdown-menu">
+          <a onclick="openUpdateModal('${resource}',${id})">Update</a>
+          ${extraActions}
+          ${deleteAction}
+        </div>
+      </div>`;
+    }
+
+    async function reclassifyStudent(studentId, action) {
+      const student = dataCache.students?.[studentId];
+      const actionLabel = action === 'promote' ? 'promote' : action === 'demote' ? 'demote' : 'keep current class for';
+      if (!confirm(`Are you sure you want to ${actionLabel} ${student?.first_name || 'this student'} ${student?.last_name || ''}?`)) return;
+
+      const y = new Date().getFullYear();
+      const res = await api(`${API}/students/${studentId}/reclassify`, 'POST', {
+        action,
+        academic_year: `${y}/${y + 1}`,
+      });
+      if (res && !res.error) {
+        showAlert(res.message || 'Student class updated');
+        loadStudents();
+      } else {
+        showAlert(res?.error || 'Class update failed', 'error');
+      }
+    }
+
+    function toggleDropdown(btn) {
+      // Close all other open dropdowns
+      document.querySelectorAll('.dropdown-menu.show').forEach(m => {
+        if (m !== btn.nextElementSibling) m.classList.remove('show');
+      });
+      btn.nextElementSibling.classList.toggle('show');
+    }
+
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.action-dropdown')) {
+        document.querySelectorAll('.dropdown-menu.show').forEach(m => m.classList.remove('show'));
+      }
+    });
+
+    // ── Update Modal ────────────────────────────────
+    const updateTemplates = {
+      students: {
+        title: 'Update Student',
+        urlFn: (id) => `${API}/students/${id}`,
+        fields: [
+          { name: 'admission_number', label: 'Admission No', required: true },
+          { name: 'first_name', label: 'First Name', required: true },
+          { name: 'last_name', label: 'Last Name', required: true },
+          { name: 'other_name', label: 'Other Name' },
+          { name: 'gender', label: 'Gender', type: 'select', options: ['Male','Female','Other'], required: true },
+          { name: 'date_of_birth', label: 'Date of Birth', type: 'date' },
+          { name: 'email', label: 'Email', type: 'email' },
+          { name: 'phone', label: 'Phone' },
+          { name: 'tuition_amount_due', label: 'Tuition Due', type: 'number' },
+          { name: 'tuition_amount_paid', label: 'Tuition Paid', type: 'number' },
+          { name: 'status', label: 'Status', type: 'select', options: ['active','inactive','graduated','transferred'] },
+        ],
+        onSuccess: () => { loadStudents(); },
+      },
+      teachers: {
+        title: 'Update Teacher',
+        urlFn: (id) => `${API}/teachers/${id}`,
+        fields: [
+          { name: 'employee_number', label: 'Employee No', required: true },
+          { name: 'first_name', label: 'First Name', required: true },
+          { name: 'last_name', label: 'Last Name', required: true },
+          { name: 'other_name', label: 'Other Name' },
+          { name: 'gender', label: 'Gender', type: 'select', options: ['Male','Female','Other'] },
+          { name: 'phone', label: 'Phone', required: true },
+          { name: 'email', label: 'Email', type: 'email' },
+          { name: 'status', label: 'Status', type: 'select', options: ['active','inactive'] },
+        ],
+        onSuccess: () => { loadTeachers(); },
+      },
+      parents: {
+        title: 'Update Parent',
+        urlFn: (id) => `${API}/parents/${id}`,
+        fields: [
+          { name: 'first_name', label: 'First Name', required: true },
+          { name: 'last_name', label: 'Last Name', required: true },
+          { name: 'gender', label: 'Gender', type: 'select', options: ['Male','Female','Other'] },
+          { name: 'phone', label: 'Phone', required: true },
+          { name: 'email', label: 'Email', type: 'email', required: true },
+          { name: 'address', label: 'Address' },
+          { name: 'relationship', label: 'Relationship', type: 'select', options: ['Father','Mother','Guardian','Other'] },
+        ],
+        onSuccess: () => { loadParents(); },
+      },
+      classes: {
+        title: 'Update Class',
+        urlFn: (id) => `${API}/classes/${id}`,
+        fields: [
+          { name: 'class_name', label: 'Class Name', required: true },
+          { name: 'class_code', label: 'Class Code', required: true },
+          { name: 'level', label: 'Level', required: true },
+          { name: 'capacity', label: 'Capacity', type: 'number' },
+        ],
+        onSuccess: () => { loadClasses(); },
+      },
+      subjects: {
+        title: 'Update Subject',
+        urlFn: (id) => `${API}/subjects/${id}`,
+        fields: [
+          { name: 'subject_code', label: 'Subject Code', required: true },
+          { name: 'subject_name', label: 'Subject Name', required: true },
+          { name: 'description', label: 'Description' },
+          { name: 'is_active', label: 'Active', type: 'select', options: ['true','false'] },
+        ],
+        onSuccess: () => { loadSubjects(); },
+      },
+      fees: {
+        title: 'Update Fee',
+        urlFn: (id) => `${API}/fees/${id}`,
+        fields: [
+          { name: 'description', label: 'Description' },
+          { name: 'amount_due', label: 'Amount Due', type: 'number', required: true },
+          { name: 'amount_paid', label: 'Amount Paid', type: 'number' },
+          { name: 'due_date', label: 'Due Date', type: 'date' },
+          { name: 'status', label: 'Status', type: 'select', options: ['unpaid','partial','paid'] },
+        ],
+        onSuccess: () => { loadFees(); },
+      },
+      assignments: {
+        title: 'Update Assignment',
+        urlFn: (id) => `${API}/assignments/${id}`,
+        fields: [
+          { name: 'academic_year', label: 'Academic Year', required: true },
+          { name: 'term', label: 'Term', required: true },
+        ],
+        onSuccess: () => { loadAssignments(); },
+      },
+    };
+
+    async function openUpdateModal(resource, id) {
+      const config = updateTemplates[resource];
+      if (!config) { showAlert('Update not available for this resource', 'error'); return; }
+
+      currentFormConfig = { ...config, method: 'PUT' };
+      currentEditId = id;
+
+      document.getElementById('modalTitle').textContent = config.title;
+      const form = document.getElementById('modalForm');
+
+      // Get current data from cache
+      const current = dataCache[resource] ? dataCache[resource][id] : null;
+
+      let html = config.fields.map(f => {
+        const val = current && current[f.name] != null ? current[f.name] : '';
+        const displayVal = f.type === 'date' && val ? val.split('T')[0] : val;
+        if (f.type === 'select') {
+          const opts = f.options.map(o => `<option value="${o}" ${String(val) === String(o) ? 'selected' : ''}>${o}</option>`).join('');
+          return `<div class="form-group"><label>${f.label}</label>
+            <select name="${f.name}" ${f.required ? 'required' : ''}><option value="">Select...</option>${opts}</select></div>`;
+        }
+        return `<div class="form-group"><label>${f.label}</label>
+          <input type="${f.type || 'text'}" name="${f.name}" value="${escHtml(String(displayVal))}" ${f.required ? 'required' : ''} ${f.type === 'number' ? 'step="any"' : ''}></div>`;
+      }).join('');
+
+      html += `<div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Update</button>
+      </div>`;
+
+      form.innerHTML = html;
+      document.getElementById('modalOverlay').classList.add('show');
+
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = Object.fromEntries(new FormData(form));
+        const url = config.urlFn(id);
+        const res = await api(url, 'PUT', formData);
+        if (res && !res.error) {
+          showAlert(res.warning ? `Updated successfully. ${res.warning}` : 'Updated successfully');
+          closeModal();
+          config.onSuccess();
+        } else {
+          showAlert(res?.error || 'Update failed', 'error');
+        }
+      };
+    }
+
+    // ── Modal Forms ─────────────────────────────────
+    const formTemplates = {
+      student: {
+        title: 'Add Student',
+        url: `${API}/students`,
+        fields: [
+          { name: 'admission_number', label: 'Admission No', required: true, readonly: true },
+          { name: 'first_name', label: 'First Name', required: true },
+          { name: 'last_name', label: 'Last Name', required: true },
+          { name: 'other_name', label: 'Other Name' },
+          { name: 'gender', label: 'Gender', type: 'select', options: ['Male','Female','Other'], required: true },
+          { name: 'date_of_birth', label: 'Date of Birth', type: 'date', required: true },
+          { name: 'guardian_name', label: 'Parent/Guardian Name', placeholder: 'e.g. John Doe', required: true },
+          { name: 'starting_class_id', label: 'Starting Class', type: 'select', options: [], required: true },
+          { name: 'starting_academic_year', label: 'Starting Academic Year', placeholder: 'e.g. 2026/2027', required: true },
+          { name: 'tuition_amount_due', label: 'Tuition Due', type: 'number', placeholder: '0.00', required: true },
+          { name: 'tuition_amount_paid', label: 'Tuition Paid', type: 'number', placeholder: '0.00', required: true },
+        ],
+        onSuccess: () => { loadStudents(); },
+      },
+      teacher: {
+        title: 'Add Teacher',
+        url: `${API}/teachers`,
+        fields: [
+          { name: 'employee_number', label: 'Employee No', required: true, readonly: true },
+          { name: 'first_name', label: 'First Name', required: true },
+          { name: 'last_name', label: 'Last Name', required: true },
+          { name: 'other_name', label: 'Other Name' },
+          { name: 'gender', label: 'Gender', type: 'select', options: ['Male','Female','Other'], required: true },
+          { name: 'phone', label: 'Phone', required: true },
+          { name: 'email', label: 'Email', type: 'email', required: true },
+        ],
+        onSuccess: () => { loadTeachers(); },
+      },
+      parent: {
+        title: 'Add Parent',
+        url: `${API}/parents`,
+        fields: [
+          { name: 'first_name', label: 'First Name', required: true },
+          { name: 'last_name', label: 'Last Name', required: true },
+          { name: 'gender', label: 'Gender', type: 'select', options: ['Male','Female','Other'], required: true },
+          { name: 'phone', label: 'Phone', required: true },
+          { name: 'email', label: 'Email', type: 'email', required: true },
+          { name: 'address', label: 'Address' },
+          { name: 'relationship', label: 'Relationship', type: 'select', options: ['Father','Mother','Guardian','Other'], required: true },
+        ],
+        onSuccess: () => { loadParents(); },
+      },
+      class: {
+        title: 'Add Class',
+        url: `${API}/classes`,
+        fields: [
+          { name: 'class_name', label: 'Class Name', required: true },
+          { name: 'class_code', label: 'Class Code', required: true },
+          { name: 'level', label: 'Level', required: true },
+          { name: 'capacity', label: 'Capacity', type: 'number' },
+        ],
+        onSuccess: () => { loadClasses(); },
+      },
+      subject: {
+        title: 'Add Subject',
+        url: `${API}/subjects`,
+        fields: [
+          { name: 'subject_code', label: 'Subject Code', required: true },
+          { name: 'subject_name', label: 'Subject Name', required: true },
+          { name: 'description', label: 'Description' },
+        ],
+        onSuccess: () => { loadSubjects(); },
+      },
+      fee: {
+        title: 'Add Fee',
+        url: `${API}/fees`,
+        fields: [
+          { name: 'admission_number', label: 'ADM Number', required: true, placeholder: 'e.g. ADM-2026-123456' },
+          { name: 'description', label: 'Description' },
+          { name: 'amount_due', label: 'Amount Due', type: 'number', required: true },
+          { name: 'due_date', label: 'Due Date', type: 'date' },
+        ],
+        onSuccess: () => { loadFees(); },
+      },
+      assignment: {
+        title: 'Assign Teacher',
+        url: `${API}/assignments`,
+        fields: [
+          { name: 'teacher_id', label: 'Teacher ID', type: 'number', required: true },
+          { name: 'subject_id', label: 'Subject ID', type: 'number', required: true },
+          { name: 'class_id', label: 'Class ID', type: 'number', required: true },
+          { name: 'academic_year', label: 'Academic Year', required: true, placeholder: '2025/2026' },
+          { name: 'term', label: 'Term', required: true },
+        ],
+        onSuccess: () => { loadAssignments(); },
+      },
+    };
+
+    let currentFormConfig = null;
+    let currentEditId = null;
+
+    function generateRandomId(prefix) {
+      const rand = Math.floor(100000 + Math.random() * 900000);
+      return `${prefix}-${rand}`;
+    }
+
+    function generateRandomAdmissionNumber() {
+      const year = new Date().getFullYear();
+      return `ADM-${year}-${Math.floor(100000 + Math.random() * 900000)}`;
+    }
+
+    async function openModal(type, id = null) {
+      const config = formTemplates[type];
+      if (!config) return;
+      currentFormConfig = config;
+      currentEditId = id;
+
+      if (type === 'student') {
+        const classes = await api(`${API}/classes`);
+        const startClassField = config.fields.find(f => f.name === 'starting_class_id');
+        if (startClassField && classes && Array.isArray(classes)) {
+          startClassField.options = classes.map(c => ({
+            value: String(c.class_id),
+            label: `${c.class_name} (${c.level})`,
+          }));
+        }
+        const admField = config.fields.find(f => f.name === 'admission_number');
+        if (admField) admField.value = generateRandomAdmissionNumber();
+      }
+
+      if (type === 'teacher') {
+        const empField = config.fields.find(f => f.name === 'employee_number');
+        if (empField) empField.value = generateRandomId('EMP');
+      }
+
+      document.getElementById('modalTitle').textContent = config.title;
+      const form = document.getElementById('modalForm');
+
+      let html = config.fields.map(f => {
+        const optionalPlaceholder = !f.required && !f.placeholder ? 'Optional' : (f.placeholder || '');
+        if (f.type === 'select') {
+          const opts = (f.options || []).map(o => {
+            const val = typeof o === 'object' ? o.value : o;
+            const label = typeof o === 'object' ? o.label : o;
+            return `<option value="${escHtml(String(val))}">${escHtml(String(label))}</option>`;
+          }).join('');
+          return `<div class="form-group"><label>${f.label}${!f.required ? ' <span class="optional-hint">Optional</span>' : ''}</label>
+            <select name="${f.name}" ${f.required ? 'required' : ''}><option value="">Select...</option>${opts}</select></div>`;
+        }
+        const readOnlyAttr = f.readonly ? 'readonly' : '';
+        const valueAttr = f.value ? `value="${escHtml(String(f.value))}"` : '';
+        return `<div class="form-group"><label>${f.label}${!f.required ? ' <span class="optional-hint">Optional</span>' : ''}</label>
+          <input type="${f.type || 'text'}" name="${f.name}" ${f.required ? 'required' : ''} 
+          placeholder="${optionalPlaceholder}" ${f.type === 'number' ? 'step="any"' : ''} ${readOnlyAttr} ${valueAttr}></div>`;
+      }).join('');
+
+      html += `<div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>`;
+
+      form.innerHTML = html;
+      document.getElementById('modalOverlay').classList.add('show');
+
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = Object.fromEntries(new FormData(form));
+        const method = config.method || 'POST';
+        const url = config.urlFn ? config.urlFn(currentEditId) : config.url;
+
+        const res = await api(url, method, formData);
+        if (res && !res.error) {
+          showAlert(res.warning ? `Saved successfully. ${res.warning}` : 'Saved successfully');
+          closeModal();
+          config.onSuccess();
+        } else {
+          showAlert(res?.error || 'Save failed', 'error');
+        }
+      };
+    }
+
+    function closeModal() {
+      document.getElementById('modalOverlay').classList.remove('show');
+    }
+
+    // Close modal on overlay click
+    document.getElementById('modalOverlay').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeModal();
+    });
+
+    // ── Pending Approvals ─────────────────────────
+    async function loadApprovals() {
+      const role = document.getElementById('approvalRoleFilter')?.value || '';
+      const q = document.getElementById('approvalSearchFilter')?.value?.trim() || '';
+      let url = `${API}/pending-registrations?`;
+      if (role) url += `role=${encodeURIComponent(role)}&`;
+      if (q) url += `q=${encodeURIComponent(q)}&`;
+
+      const data = await api(url);
+      if (!data) return;
+      document.getElementById('approvalsTable').innerHTML = data.map(r => {
+        const studentName = r.student_first_name ? `${r.student_first_name} ${r.student_last_name}` : '-';
+        const date = r.created_at ? new Date(r.created_at).toLocaleDateString() : '';
+        const badge = r.status === 'pending' ? 'badge-unpaid' : r.status === 'approved' ? 'badge-active' : 'badge-inactive';
+        const actions = r.status === 'pending' ? `
+          <button class="btn btn-success btn-sm" onclick="approveReg(${r.request_id})">Approve</button>
+          <button class="btn btn-danger btn-sm" onclick="rejectReg(${r.request_id})">Decline</button>
+        ` : '';
+        return `<tr>
+          <td>${r.request_id}</td><td>${escHtml(r.username)}</td><td>${r.role}</td>
+          <td>${r.email || '-'}</td><td>${r.phone || '-'}</td><td>${studentName}</td>
+          <td>${date}</td><td><span class="badge ${badge}">${r.status}</span></td>
+          <td>${actions}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="9">No registration requests.</td></tr>';
+
+      await loadPendingGradeChanges();
+    }
+
+    function clearApprovalsFilters() {
+      const roleEl = document.getElementById('approvalRoleFilter');
+      const searchEl = document.getElementById('approvalSearchFilter');
+      if (roleEl) roleEl.value = '';
+      if (searchEl) searchEl.value = '';
+      loadApprovals();
+    }
+
+    async function approveReg(id) {
+      if (!confirm('Approve this registration?')) return;
+      const res = await api(`${API}/pending-registrations/${id}/approve`, 'PUT');
+      if (res && !res.error) {
+        showAlert(res.message || 'Approved');
+        loadApprovals();
+        loadNotifBadge();
+      } else {
+        showAlert(res?.error || 'Approve failed', 'error');
+      }
+    }
+
+    async function rejectReg(id) {
+      const reason = prompt('Decline reason (optional):');
+      if (reason === null) return; // cancelled
+      const res = await api(`${API}/pending-registrations/${id}/reject`, 'PUT', { reason });
+      if (res && !res.error) {
+        showAlert('Declined');
+        loadApprovals();
+        loadNotifBadge();
+      } else {
+        showAlert(res?.error || 'Reject failed', 'error');
+      }
+    }
+
+    async function loadPendingGradeChanges() {
+      const q = document.getElementById('gradeApprovalSearch')?.value?.trim() || '';
+      const url = q
+        ? `${API}/pending-grade-changes?q=${encodeURIComponent(q)}`
+        : `${API}/pending-grade-changes`;
+      const data = await api(url);
+      if (!data) return;
+      document.getElementById('pendingGradeChangesTable').innerHTML = data.map(r => {
+        const submitted = r.created_at ? new Date(r.created_at).toLocaleDateString() : '';
+        return `<tr>
+          <td>${r.request_id}</td>
+          <td>${escHtml(r.student_name)}</td>
+          <td>${escHtml(r.admission_number) || '-'}</td>
+          <td>${escHtml(r.class_name)}</td>
+          <td>${escHtml(r.subject_name)}</td>
+          <td>${escHtml(r.term)}</td>
+          <td>${r.proposed_marks ?? '-'}</td>
+          <td>${escHtml(r.proposed_grade_letter) || '-'}</td>
+          <td>${escHtml(r.requested_by_username)}</td>
+          <td>${submitted}</td>
+          <td>
+            <button class="btn btn-success btn-sm" onclick="approveGradeChange(${r.request_id})">Approve</button>
+            <button class="btn btn-danger btn-sm" onclick="rejectGradeChange(${r.request_id})">Reject</button>
+          </td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="11">No pending grade changes.</td></tr>';
+    }
+
+    function clearPendingGradeFilters() {
+      const input = document.getElementById('gradeApprovalSearch');
+      if (input) input.value = '';
+      loadPendingGradeChanges();
+    }
+
+    async function approveGradeChange(id) {
+      if (!confirm('Approve and apply this grade change?')) return;
+      const res = await api(`${API}/pending-grade-changes/${id}/approve`, 'PUT');
+      if (res && !res.error) {
+        showAlert(res.message || 'Grade change approved');
+        loadPendingGradeChanges();
+        loadNotifBadge();
+      } else {
+        showAlert(res?.error || 'Approve failed', 'error');
+      }
+    }
+
+    async function rejectGradeChange(id) {
+      const reason = prompt('Rejection reason (optional):');
+      if (reason === null) return;
+      const res = await api(`${API}/pending-grade-changes/${id}/reject`, 'PUT', { reason });
+      if (res && !res.error) {
+        showAlert(res.message || 'Grade change rejected');
+        loadPendingGradeChanges();
+        loadNotifBadge();
+      } else {
+        showAlert(res?.error || 'Reject failed', 'error');
+      }
+    }
+
+    function escHtml(str) {
+      const d = document.createElement('div');
+      d.textContent = str || '';
+      return d.innerHTML;
+    }
+
+    // ── Audit Logs ──────────────────────────────────
+    async function loadAuditLogs() {
+      const action = document.getElementById('auditAction')?.value || '';
+      const tableName = document.getElementById('auditTable')?.value || '';
+      let url = `${API}/audit-logs?`;
+      if (action) url += `action=${encodeURIComponent(action)}&`;
+      if (tableName) url += `table_name=${encodeURIComponent(tableName)}&`;
+      const data = await api(url);
+      if (!data) return;
+      document.getElementById('auditLogsTable').innerHTML = data.map(l => {
+        const time = l.created_at ? new Date(l.created_at).toLocaleString() : '';
+        const details = l.new_values ? JSON.stringify(l.new_values).substring(0, 80) : '';
+        return `<tr>
+          <td>${l.log_id}</td><td>${escHtml(l.username || 'System')}</td><td>${l.action}</td>
+          <td>${l.table_name}</td><td>${l.record_id || '-'}</td><td>${time}</td>
+          <td style="font-size:0.8rem; max-width:200px; overflow:hidden; text-overflow:ellipsis">${escHtml(details)}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="7">No logs found.</td></tr>';
+    }
+
+    // ── Notification Badge ──────────────────────────
+    async function loadNotifBadge() {
+      try {
+        const data = await api(`${API}/notifications`);
+        if (!data) return;
+        const badge = document.getElementById('approvalBadge');
+        const total = Number(data.pending_total || 0);
+        if (total > 0) {
+          badge.textContent = total;
+          badge.style.display = 'inline-block';
+        } else {
+          badge.style.display = 'none';
+        }
+      } catch(e) { /* ignore */ }
+    }
+
+    // Initial load
+    loadDashboard();
+    loadNotifBadge();
+
+    // ── Record Lookup ───────────────────────────────
+    async function loadRecord() {
+      const studentId = document.getElementById('recStudentId').value;
+      const firstName = document.getElementById('recFirstName').value.trim();
+      const lastName = document.getElementById('recLastName').value.trim();
+
+      if (!studentId && !firstName && !lastName) {
+        showAlert('Please enter at least one search field', 'error');
+        return;
+      }
+
+      let url = `${API}/student-record?`;
+      if (studentId) url += `student_id=${encodeURIComponent(studentId)}&`;
+      if (firstName) url += `first_name=${encodeURIComponent(firstName)}&`;
+      if (lastName) url += `last_name=${encodeURIComponent(lastName)}&`;
+
+      const data = await api(url);
+      if (!data || data.error) {
+        document.getElementById('recordResult').innerHTML = `<div class="alert alert-error">${escHtml(data?.error || 'Student not found')}</div>`;
+        return;
+      }
+
+      const st = data.student;
+      const parents = data.parents || [];
+      const currentClass = data.current_class || 'N/A';
+      const classLeft = data.class_left || 'N/A';
+      const startedClass = data.started_class || 'N/A';
+      const startedAcademicYear = data.started_academic_year || 'N/A';
+      const enrollDate = data.date_of_enrollment ? new Date(data.date_of_enrollment).toLocaleDateString() : 'N/A';
+      const departDate = data.date_of_departure ? new Date(data.date_of_departure).toLocaleDateString() : 'N/A';
+
+      let parentHtml = parents.length === 0 ? '<em>No parent records linked</em>' : parents.map((p, i) => `
+        <div>
+          <span class="parent-link" onclick="toggleParentDetail(${i})">${escHtml(p.first_name)} ${escHtml(p.last_name)} (${escHtml(p.relationship || 'Parent')})</span>
+          <div class="parent-detail" id="parentDetail${i}" style="display:none">
+            <div class="record-field"><span class="label">Full Name:</span> ${escHtml(p.first_name)} ${escHtml(p.last_name)}</div>
+            <div class="record-field"><span class="label">Phone:</span> ${escHtml(p.phone || 'N/A')}</div>
+            <div class="record-field"><span class="label">Email:</span> ${escHtml(p.email || 'N/A')}</div>
+            <div class="record-field"><span class="label">Gender:</span> ${escHtml(p.gender || 'N/A')}</div>
+          </div>
+        </div>
+      `).join('');
+
+      document.getElementById('recordResult').innerHTML = `
+        <div class="record-card">
+          <h3>Student Information</h3>
+          <div class="record-field"><span class="label">Student ID:</span> ${st.student_id}</div>
+          <div class="record-field"><span class="label">Admission No:</span> ${escHtml(st.admission_number)}</div>
+          <div class="record-field"><span class="label">Name:</span> ${escHtml(st.first_name)} ${escHtml(st.last_name)}</div>
+          <div class="record-field"><span class="label">Gender:</span> ${escHtml(st.gender)}</div>
+          <div class="record-field"><span class="label">Date of Birth:</span> ${st.date_of_birth ? new Date(st.date_of_birth).toLocaleDateString() : 'N/A'}</div>
+          <div class="record-field"><span class="label">Status:</span> ${statusBadge(st.status)}</div>
+        </div>
+        <div class="record-card">
+          <h3>Parent / Guardian</h3>
+          ${parentHtml}
+        </div>
+        <div class="record-card">
+          <h3>Enrollment Details</h3>
+          <div class="record-field"><span class="label">Started Class:</span> ${escHtml(startedClass)}</div>
+          <div class="record-field"><span class="label">Started Academic Year:</span> ${escHtml(startedAcademicYear)}</div>
+          <div class="record-field"><span class="label">Current Class:</span> ${st.status === 'active' ? escHtml(currentClass) : '-'}</div>
+          <div class="record-field"><span class="label">Class Left:</span> ${st.status !== 'active' ? escHtml(classLeft) : '-'}</div>
+          <div class="record-field"><span class="label">Date of Enrollment:</span> ${enrollDate}</div>
+          <div class="record-field"><span class="label">Date Left:</span> ${st.status !== 'active' ? departDate : '-'}</div>
+        </div>
+      `;
+    }
+
+    function toggleParentDetail(idx) {
+      const el = document.getElementById('parentDetail' + idx);
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    // ── Messages ────────────────────────────────────
+    function switchMsgTab(tab) {
+      document.querySelectorAll('.msg-tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('msgBroadcast').style.display = tab === 'broadcast' ? 'block' : 'none';
+      document.getElementById('msgPrivate').style.display = tab === 'private' ? 'block' : 'none';
+      document.getElementById('msgInbox').style.display = tab === 'inbox' ? 'block' : 'none';
+      document.getElementById('msgConversation').style.display = 'none';
+      if (tab === 'inbox') loadMessagesList();
+      if (tab === 'broadcast') loadClassesForBroadcast();
+    }
+
+    async function loadMessages() {
+      loadClassesForBroadcast();
+    }
+
+    async function loadClassesForBroadcast() {
+      const data = await api(`${API}/classes`);
+      if (!data) return;
+      document.getElementById('bcClassSelect').innerHTML = '<option value="">Select class...</option>' +
+        data.map(c => `<option value="${c.class_id}">${escHtml(c.class_name)} (${escHtml(c.level)})</option>`).join('');
+    }
+
+    async function sendBroadcast() {
+      const class_id = document.getElementById('bcClassSelect').value;
+      const subject = document.getElementById('bcSubject').value.trim();
+      const body = document.getElementById('bcBody').value.trim();
+      if (!class_id || !body) { showAlert('Select a class and enter message', 'error'); return; }
+
+      const res = await api(`${API}/messages/broadcast`, 'POST', { class_id, subject, body });
+      if (res && !res.error) {
+        showAlert('Broadcast sent!');
+        document.getElementById('bcSubject').value = '';
+        document.getElementById('bcBody').value = '';
+      } else {
+        showAlert(res?.error || 'Send failed', 'error');
+      }
+    }
+
+    async function sendPrivateMsg() {
+      const recipient_email = document.getElementById('pmRecipientEmail').value.trim();
+      const subject = document.getElementById('pmSubject').value.trim();
+      const body = document.getElementById('pmBody').value.trim();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!recipient_email || !emailRegex.test(recipient_email)) { showAlert('Enter a valid recipient email', 'error'); return; }
+      if (!body) { showAlert('Enter message body', 'error'); return; }
+
+      const res = await api(`${API}/messages/private`, 'POST', { recipient_email, subject, message: body });
+      if (res && !res.error) {
+        showAlert('Email sent successfully!');
+        document.getElementById('pmRecipientEmail').value = '';
+        document.getElementById('pmSubject').value = '';
+        document.getElementById('pmBody').value = '';
+      } else {
+        showAlert(res?.error || 'Send failed', 'error');
+      }
+    }
+
+    async function loadMessagesList() {
+      const data = await api(`${API}/messages`);
+      if (!data) return;
+      const list = document.getElementById('messagesList');
+      if (data.length === 0) {
+        list.innerHTML = '<div class="alert">No messages yet.</div>';
+        return;
+      }
+      list.innerHTML = data.map(m => {
+        const typeBadge = m.message_type === 'broadcast'
+          ? `<span class="msg-badge broadcast">Broadcast</span>`
+          : `<span class="msg-badge private">Private</span>`;
+        const time = m.created_at ? new Date(m.created_at).toLocaleString() : '';
+        const target = m.message_type === 'broadcast' ? (m.class_name || '') : (m.recipient_name || '');
+        return `<div class="msg-card ${m.message_type === 'broadcast' ? 'broadcast' : ''}" onclick="openConversation(${m.message_id})">
+          <div class="msg-header">
+            <span class="msg-sender">To: ${escHtml(target)} ${typeBadge}</span>
+            <span class="msg-time">${time}</span>
+          </div>
+          ${m.subject ? `<div class="msg-subject">${escHtml(m.subject)}</div>` : ''}
+          <div class="msg-preview">${escHtml(m.body)}</div>
+        </div>`;
+      }).join('');
+    }
+
+    async function openConversation(msgId) {
+      const data = await api(`${API}/messages/${msgId}/conversation`);
+      if (!data) return;
+
+      const user = JSON.parse(localStorage.getItem('user'));
+      const myId = user.user_id;
+      const conv = document.getElementById('msgConversation');
+
+      document.getElementById('msgBroadcast').style.display = 'none';
+      document.getElementById('msgPrivate').style.display = 'none';
+      document.getElementById('msgInbox').style.display = 'none';
+      conv.style.display = 'block';
+
+      const firstMsg = data[0];
+      const isPrivate = firstMsg && firstMsg.message_type === 'private';
+
+      let thread = data.map(m => {
+        const isSent = m.sender_id === myId;
+        const time = m.created_at ? new Date(m.created_at).toLocaleString() : '';
+        return `<div class="msg-bubble ${isSent ? 'sent' : 'received'}">
+          <div class="bubble-sender">${escHtml(m.sender_name)}</div>
+          ${m.body}
+          <div class="bubble-time">${time}</div>
+        </div>`;
+      }).join('');
+
+      const replyForm = isPrivate ? `
+        <div class="reply-box">
+          <textarea id="replyBody" placeholder="Type reply..." rows="2"></textarea>
+          <button class="btn btn-primary" onclick="sendReply(${firstMsg.message_id})">Reply</button>
+        </div>
+      ` : '';
+
+      conv.innerHTML = `
+        <div class="conversation-view">
+          <h3><button class="back-btn" onclick="backToInbox()">&#8592;</button> Conversation ${firstMsg.subject ? '- ' + escHtml(firstMsg.subject) : ''}</h3>
+          <div class="msg-thread">${thread}</div>
+          ${replyForm}
+        </div>
+      `;
+    }
+
+    async function sendReply(msgId) {
+      const body = document.getElementById('replyBody').value.trim();
+      if (!body) return;
+      const res = await api(`${API}/messages/${msgId}/reply`, 'POST', { body });
+      if (res && !res.error) {
+        openConversation(msgId);
+      } else {
+        showAlert(res?.error || 'Reply failed', 'error');
+      }
+    }
+
+    function backToInbox() {
+      document.getElementById('msgConversation').style.display = 'none';
+      document.getElementById('msgInbox').style.display = 'block';
+      document.querySelectorAll('.msg-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.msg-tab')[2].classList.add('active');
+      loadMessagesList();
+    }
+  </script>
+</body>
+</html>

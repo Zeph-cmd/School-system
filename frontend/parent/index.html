@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parent Dashboard - School Management</title>
+  <link rel="stylesheet" href="/styles/main.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h2>School Mgmt</h2>
+      <div class="role-badge">Parent Portal</div>
+      <nav>
+        <a href="#" data-section="children" class="active">&#128118; <span>My Children</span></a>
+        <a href="#" data-section="grades">&#128200; <span>Grades</span></a>
+        <a href="#" data-section="fees">&#128176; <span>Fees</span></a>
+        <a href="#" data-section="homework">&#128218; <span>Homework</span></a>
+        <a href="#" data-section="messages">&#128172; <span>Messages</span></a>
+        <a href="#" data-section="contact">&#9993; <span>Contact</span></a>
+      </nav>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </aside>
+
+    <main class="main">
+      <div id="alert"></div>
+
+      <!-- My Children -->
+      <div id="sec-children" class="section active">
+        <h1>My Children</h1>
+        <div class="record-card" style="margin-bottom:1rem;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
+            <div>
+              <div style="font-weight:700;">Add Child (Admin Approval Required)</div>
+              <div style="color:var(--text-light); font-size:0.9rem;">Use your same parent account to request linking another child.</div>
+            </div>
+            <button class="btn btn-primary" onclick="toggleAddChildForm()">+ Add Child Request</button>
+          </div>
+          <div id="addChildRequestWrap" style="display:none; margin-top:1rem; border-top:1px solid var(--border); padding-top:1rem;">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Parent Username</label>
+                <input type="text" id="addChildUsername" readonly>
+              </div>
+              <div class="form-group">
+                <label>Parent Email</label>
+                <input type="email" id="addChildEmail" readonly>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Student First Name</label>
+                <input type="text" id="addChildFirstName" placeholder="Enter first name">
+              </div>
+              <div class="form-group">
+                <label>Student Last Name</label>
+                <input type="text" id="addChildLastName" placeholder="Enter last name">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Admission Number <span style="font-size:0.8rem;color:var(--text-light)">(Optional)</span></label>
+                <input type="text" id="addChildAdmission" placeholder="Example: ADM-2026-001">
+              </div>
+              <div class="form-group">
+                <label>Guardian Name (as school record)</label>
+                <input type="text" id="addChildGuardian" placeholder="Example: Parent One">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Relationship <span style="font-size:0.8rem;color:var(--text-light)">(Optional)</span></label>
+                <select id="addChildRelationship">
+                  <option value="">Select...</option>
+                  <option>Father</option>
+                  <option>Mother</option>
+                  <option>Guardian</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Account Password</label>
+                <input type="password" id="addChildPassword" placeholder="Confirm with your account password">
+              </div>
+            </div>
+            <button class="btn btn-success" onclick="submitAddChildRequest()">Submit Child Request</button>
+          </div>
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>Adm No</th><th>Name</th><th>Gender</th><th>DOB</th><th>Relationship</th><th>Tuition Due</th><th>Tuition Paid</th><th>Tuition Status</th><th>Status</th>
+          </tr></thead><tbody id="childrenTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Grades -->
+      <div id="sec-grades" class="section">
+        <h1>Grades</h1>
+        <div class="form-group" style="max-width:300px;margin-bottom:1rem">
+          <label>Select Child</label>
+          <select id="gradeChildSelect" onchange="loadGrades()">
+            <option value="">Choose...</option>
+          </select>
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>Subject</th><th>Term</th><th>Marks</th><th>Grade</th><th>Remarks</th>
+          </tr></thead><tbody id="gradesTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Fees -->
+      <div id="sec-fees" class="section">
+        <h1>Fee Statement</h1>
+        <div class="form-group" style="max-width:300px;margin-bottom:1rem">
+          <label>Select Child</label>
+          <select id="feeChildSelect" onchange="loadFees()">
+            <option value="">Choose...</option>
+          </select>
+        </div>
+        <div class="stats-grid" id="feeSummary" style="margin-bottom:1rem"></div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>Description</th><th>Class</th><th>Year</th><th>Due</th><th>Paid</th><th>Status</th>
+          </tr></thead><tbody id="feesTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Homework -->
+      <div id="sec-homework" class="section">
+        <h1>Homework</h1>
+        <div class="form-group" style="max-width:300px;margin-bottom:1rem">
+          <label>Select Child</label>
+          <select id="hwChildSelect" onchange="loadHomework()">
+            <option value="">Choose...</option>
+          </select>
+        </div>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>Title</th><th>Subject</th><th>Class</th><th>Teacher</th><th>Due Date</th>
+          </tr></thead><tbody id="homeworkTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Messages -->
+      <div id="sec-messages" class="section">
+        <h1>Messages</h1>
+        <div class="msg-tabs">
+          <button class="msg-tab active" onclick="switchParentMsgTab('broadcasts')">Class Broadcasts</button>
+          <button class="msg-tab" onclick="switchParentMsgTab('private')">Private Messages</button>
+        </div>
+        <div id="parentBroadcasts">
+          <div class="msg-list" id="broadcastList"></div>
+        </div>
+        <div id="parentPrivate" style="display:none">
+          <div class="msg-list" id="privateList"></div>
+        </div>
+        <div id="parentConversation" style="display:none"></div>
+      </div>
+
+      <!-- Contact -->
+      <div id="sec-contact" class="section">
+        <h1>Contact School</h1>
+        <div class="record-card">
+          <h3>Contact Admin</h3>
+          <div class="form-group">
+            <label>Subject</label>
+            <input type="text" id="contactAdminSubject" placeholder="What is this about?">
+          </div>
+          <div class="form-group">
+            <label>Message</label>
+            <textarea id="contactAdminBody" rows="4" placeholder="Type your message to admin..."></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="sendAdminEmail()">Contact Admin</button>
+        </div>
+
+        <div class="record-card">
+          <h3>Contact Subject Teacher</h3>
+          <div class="form-group">
+            <label>Teacher / Subject</label>
+            <select id="contactTeacherSelect">
+              <option value="">Choose teacher...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Subject</label>
+            <input type="text" id="contactTeacherSubject" placeholder="What is this about?">
+          </div>
+          <div class="form-group">
+            <label>Message</label>
+            <textarea id="contactTeacherBody" rows="4" placeholder="Type your message to the teacher..."></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="sendTeacherEmail()">Contact Teacher</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const API = '/api/parent';
+    const token = localStorage.getItem('token');
+    if (!token) { window.location.href = '/login'; }
+
+    // Verify user has parent role
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      try {
+        const user = JSON.parse(userData);
+        if (!user.roles || !user.roles.includes('parent')) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          window.location.href = '/login';
+        }
+      } catch (e) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
+    } else {
+      window.location.href = '/login';
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
+
+    async function api(url, method = 'GET', body = null) {
+      const opts = { method, headers };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(url, opts);
+      if (res.status === 401) { logout(); return null; }
+      return res.json();
+    }
+
+    function showAlert(msg, type = 'success') {
+      const el = document.getElementById('alert');
+      el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+      setTimeout(() => el.innerHTML = '', 3000);
+    }
+
+    function logout() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+
+    function statusBadge(status) {
+      const cls = status === 'active' || status === 'paid' || status === 'present' ? 'badge-active' :
+                  status === 'absent' ? 'badge-absent' :
+                  status === 'unpaid' ? 'badge-unpaid' : 'badge-inactive';
+      return `<span class="badge ${cls}">${status}</span>`;
+    }
+
+    function tuitionStatusBadge(status) {
+      const s = status || 'null';
+      const cls = s === 'fully_paid'
+        ? 'badge-tuition-full'
+        : s === 'partial'
+          ? 'badge-tuition-partial'
+          : 'badge-tuition-null';
+      return `<span class="badge ${cls}">${s}</span>`;
+    }
+
+    // Navigation
+    document.querySelectorAll('.sidebar nav a').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const section = link.dataset.section;
+        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.remove('active'));
+        document.getElementById(`sec-${section}`).classList.add('active');
+        link.classList.add('active');
+        if (section === 'messages') loadParentMessages();
+        if (section === 'contact') loadTeacherContacts();
+      });
+    });
+
+    let myChildren = [];
+    let currentParentProfile = null;
+
+    async function loadCurrentParentProfile() {
+      try {
+        const res = await fetch('/api/auth/me', { headers });
+        if (res.status === 401) {
+          logout();
+          return;
+        }
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          showAlert(data.error || 'Unable to load your profile', 'error');
+          return;
+        }
+        currentParentProfile = data;
+        document.getElementById('addChildUsername').value = data.username || '';
+        document.getElementById('addChildEmail').value = data.email || '';
+      } catch (err) {
+        showAlert('Unable to load parent profile', 'error');
+      }
+    }
+
+    function toggleAddChildForm() {
+      const wrap = document.getElementById('addChildRequestWrap');
+      if (!wrap) return;
+      wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+      if (wrap.style.display === 'block') {
+        document.getElementById('addChildFirstName').focus();
+      }
+    }
+
+    async function submitAddChildRequest() {
+      const username = (document.getElementById('addChildUsername').value || '').trim();
+      const email = (document.getElementById('addChildEmail').value || '').trim();
+      const password = (document.getElementById('addChildPassword').value || '').trim();
+      const studentFirst = (document.getElementById('addChildFirstName').value || '').trim();
+      const studentLast = (document.getElementById('addChildLastName').value || '').trim();
+      const admission = (document.getElementById('addChildAdmission').value || '').trim();
+      const guardian = (document.getElementById('addChildGuardian').value || '').trim();
+      const relationship = (document.getElementById('addChildRelationship').value || '').trim();
+
+      if (!username || !email) {
+        showAlert('Your parent profile is not fully loaded. Refresh and try again.', 'error');
+        return;
+      }
+      if (!studentFirst || !studentLast || !guardian) {
+        showAlert('Student first name, last name, and guardian name are required.', 'error');
+        return;
+      }
+      if (!password) {
+        showAlert('Account password is required to submit request.', 'error');
+        return;
+      }
+
+      const body = {
+        username,
+        password,
+        email,
+        role: 'parent',
+        student_first_name: studentFirst,
+        student_last_name: studentLast,
+        guardian_name: guardian,
+      };
+      if (admission) body.student_admission_number = admission;
+      if (relationship) body.parent_relationship = relationship;
+
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showAlert(data.error || 'Failed to submit child request', 'error');
+          return;
+        }
+        showAlert(data.message || 'Child request submitted. Await admin approval.');
+        document.getElementById('addChildFirstName').value = '';
+        document.getElementById('addChildLastName').value = '';
+        document.getElementById('addChildAdmission').value = '';
+        document.getElementById('addChildGuardian').value = '';
+        document.getElementById('addChildRelationship').value = '';
+        document.getElementById('addChildPassword').value = '';
+        document.getElementById('addChildRequestWrap').style.display = 'none';
+      } catch (err) {
+        showAlert('Connection error while submitting request', 'error');
+      }
+    }
+
+    async function loadChildren() {
+      const data = await api(`${API}/children`);
+      if (!data) return;
+      myChildren = data;
+
+      document.getElementById('childrenTable').innerHTML = data.map(c => `<tr>
+        <td>${c.admission_number}</td><td>${c.first_name} ${c.last_name}</td>
+        <td>${c.gender}</td><td>${c.date_of_birth?.split('T')[0] || ''}</td>
+        <td>${c.relationship || '-'}</td>
+        <td>$${parseFloat(c.tuition_amount_due || 0).toFixed(2)}</td>
+        <td>$${parseFloat(c.tuition_amount_paid || 0).toFixed(2)}</td>
+        <td>${tuitionStatusBadge(c.tuition_status)}</td>
+        <td>${statusBadge(c.status)}</td>
+      </tr>`).join('') || '<tr><td colspan="9">No children linked. Contact school admin.</td></tr>';
+
+      // Populate all child select dropdowns
+      const opts = data.map(c => `<option value="${c.student_id}">${c.first_name} ${c.last_name}</option>`).join('');
+      ['gradeChildSelect', 'feeChildSelect', 'hwChildSelect'].forEach(id => {
+        document.getElementById(id).innerHTML = '<option value="">Choose...</option>' + opts;
+      });
+    }
+
+    async function loadGrades() {
+      const studentId = document.getElementById('gradeChildSelect').value;
+      if (!studentId) return;
+
+      const data = await api(`${API}/grades?student_id=${studentId}`);
+      if (!data) return;
+      document.getElementById('gradesTable').innerHTML = data.map(g => `<tr>
+        <td>${g.subject_name}</td><td>${g.term}</td>
+        <td>${g.marks || '-'}</td><td>${g.grade_letter || '-'}</td><td>${g.remarks || '-'}</td>
+      </tr>`).join('') || '<tr><td colspan="5">No grades yet.</td></tr>';
+    }
+
+    async function loadFees() {
+      const studentId = document.getElementById('feeChildSelect').value;
+      if (!studentId) return;
+
+      const data = await api(`${API}/fees?student_id=${studentId}`);
+      if (!data) return;
+
+      const child = myChildren.find(c => String(c.student_id) === String(studentId));
+      const tuitionDue = parseFloat(child?.tuition_amount_due || 0);
+      const tuitionPaid = parseFloat(child?.tuition_amount_paid || 0);
+      const tuitionOutstanding = Math.max(0, tuitionDue - tuitionPaid);
+
+      const totalDue = data.reduce((sum, f) => sum + parseFloat(f.amount_due || 0), 0);
+      const totalPaid = data.reduce((sum, f) => sum + parseFloat(f.amount_paid || 0), 0);
+      const outstanding = totalDue - totalPaid;
+
+      document.getElementById('feeSummary').innerHTML = `
+        <div class="stat-card ${tuitionOutstanding > 0 ? 'red' : 'green'}"><div class="label">Tuition ${tuitionStatusBadge(child?.tuition_status)}</div><div class="value">$${tuitionOutstanding.toLocaleString()}</div></div>
+        <div class="stat-card"><div class="label">Total Due</div><div class="value">$${totalDue.toLocaleString()}</div></div>
+        <div class="stat-card green"><div class="label">Total Paid</div><div class="value">$${totalPaid.toLocaleString()}</div></div>
+        <div class="stat-card ${outstanding > 0 ? 'red' : 'green'}"><div class="label">Outstanding</div><div class="value">$${outstanding.toLocaleString()}</div></div>
+      `;
+
+      document.getElementById('feesTable').innerHTML = data.map(f => `<tr>
+        <td>${f.description || '-'}</td><td>${f.class_name}</td><td>${f.academic_year}</td>
+        <td>$${parseFloat(f.amount_due).toFixed(2)}</td><td>$${parseFloat(f.amount_paid).toFixed(2)}</td>
+        <td>${statusBadge(f.status)}</td>
+      </tr>`).join('') || '<tr><td colspan="6">No fee records.</td></tr>';
+    }
+
+    async function loadHomework() {
+      const studentId = document.getElementById('hwChildSelect').value;
+      if (!studentId) return;
+
+      const data = await api(`${API}/homework?student_id=${studentId}`);
+      if (!data) return;
+      document.getElementById('homeworkTable').innerHTML = data.map(h => `<tr>
+        <td>${h.title}</td><td>${h.subject_name}</td><td>${h.class_name}</td>
+        <td>${h.teacher_name}</td><td>${h.due_date ? h.due_date.split('T')[0] : '-'}</td>
+      </tr>`).join('') || '<tr><td colspan="5">No homework assigned.</td></tr>';
+    }
+
+    // Initial load
+    loadCurrentParentProfile();
+    loadChildren();
+
+    function escHtml(str) {
+      const d = document.createElement('div');
+      d.textContent = str || '';
+      return d.innerHTML;
+    }
+
+    // ── Messages ────────────────────────────────────
+    function switchParentMsgTab(tab) {
+      document.querySelectorAll('.msg-tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('parentBroadcasts').style.display = tab === 'broadcasts' ? 'block' : 'none';
+      document.getElementById('parentPrivate').style.display = tab === 'private' ? 'block' : 'none';
+      document.getElementById('parentConversation').style.display = 'none';
+      if (tab === 'broadcasts') loadParentBroadcasts();
+      if (tab === 'private') loadParentPrivate();
+    }
+
+    async function loadParentMessages() {
+      loadParentBroadcasts();
+    }
+
+    async function loadParentBroadcasts() {
+      const data = await api(`${API}/messages`);
+      if (!data) return;
+      const broadcasts = data.filter(m => m.message_type === 'broadcast');
+      const list = document.getElementById('broadcastList');
+      if (broadcasts.length === 0) {
+        list.innerHTML = '<div class="alert">No broadcast messages.</div>';
+        return;
+      }
+      list.innerHTML = broadcasts.map(m => {
+        const time = m.created_at ? new Date(m.created_at).toLocaleString() : '';
+        return `<div class="msg-card broadcast">
+          <div class="msg-header">
+            <span class="msg-sender">${escHtml(m.sender_name)} <span class="msg-badge broadcast">${escHtml(m.class_name || 'Class')}</span></span>
+            <span class="msg-time">${time}</span>
+          </div>
+          ${m.subject ? `<div class="msg-subject">${escHtml(m.subject)}</div>` : ''}
+          <div class="msg-preview" style="white-space:normal">${escHtml(m.body)}</div>
+        </div>`;
+      }).join('');
+    }
+
+    async function loadParentPrivate() {
+      const data = await api(`${API}/messages`);
+      if (!data) return;
+      const privates = data.filter(m => m.message_type === 'private');
+      const list = document.getElementById('privateList');
+      if (privates.length === 0) {
+        list.innerHTML = '<div class="alert">No private messages.</div>';
+        return;
+      }
+      list.innerHTML = privates.map(m => {
+        const time = m.created_at ? new Date(m.created_at).toLocaleString() : '';
+        const unread = !m.is_read ? ' unread' : '';
+        return `<div class="msg-card${unread}" onclick="openParentConversation(${m.message_id})">
+          <div class="msg-header">
+            <span class="msg-sender">From: ${escHtml(m.sender_name)}</span>
+            <span class="msg-time">${time}</span>
+          </div>
+          ${m.subject ? `<div class="msg-subject">${escHtml(m.subject)}</div>` : ''}
+          <div class="msg-preview">${escHtml(m.body)}</div>
+        </div>`;
+      }).join('');
+    }
+
+    async function openParentConversation(msgId) {
+      const data = await api(`${API}/messages/${msgId}/conversation`);
+      if (!data) return;
+
+      const user = JSON.parse(localStorage.getItem('user'));
+      const myId = user.user_id;
+      const conv = document.getElementById('parentConversation');
+
+      document.getElementById('parentBroadcasts').style.display = 'none';
+      document.getElementById('parentPrivate').style.display = 'none';
+      conv.style.display = 'block';
+
+      const firstMsg = data[0];
+
+      let thread = data.map(m => {
+        const isSent = m.sender_id === myId;
+        const time = m.created_at ? new Date(m.created_at).toLocaleString() : '';
+        return `<div class="msg-bubble ${isSent ? 'sent' : 'received'}">
+          <div class="bubble-sender">${escHtml(m.sender_name)}</div>
+          ${escHtml(m.body)}
+          <div class="bubble-time">${time}</div>
+        </div>`;
+      }).join('');
+
+      conv.innerHTML = `
+        <div class="conversation-view">
+          <h3><button class="back-btn" onclick="backToParentInbox()">&#8592;</button> ${firstMsg.subject ? escHtml(firstMsg.subject) : 'Conversation'}</h3>
+          <div class="msg-thread">${thread}</div>
+          <div class="reply-box">
+            <textarea id="parentReplyBody" placeholder="Type reply..." rows="2"></textarea>
+            <button class="btn btn-primary" onclick="sendParentReply(${firstMsg.message_id})">Reply</button>
+          </div>
+        </div>
+      `;
+    }
+
+    async function sendParentReply(msgId) {
+      const body = document.getElementById('parentReplyBody').value.trim();
+      if (!body) return;
+      const res = await api(`${API}/messages/${msgId}/reply`, 'POST', { body });
+      if (res && !res.error) {
+        openParentConversation(msgId);
+      } else {
+        showAlert(res?.error || 'Reply failed', 'error');
+      }
+    }
+
+    function backToParentInbox() {
+      document.getElementById('parentConversation').style.display = 'none';
+      document.getElementById('parentPrivate').style.display = 'block';
+      document.querySelectorAll('.msg-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.msg-tab')[1].classList.add('active');
+      loadParentPrivate();
+    }
+
+    // ── Email Contact ───────────────────────────────
+    async function loadTeacherContacts() {
+      const data = await api(`${API}/contact-teachers`);
+      if (!data) return;
+      const select = document.getElementById('contactTeacherSelect');
+      select.innerHTML = '<option value="">Choose teacher...</option>' + data.map(t =>
+        `<option value="${t.teacher_id}">${escHtml(t.teacher_name)} (${escHtml(t.phone) || 'No phone'}) - ${escHtml(t.subject_name)} (${escHtml(t.class_name)})</option>`
+      ).join('');
+    }
+
+    async function sendAdminEmail() {
+      const subject = document.getElementById('contactAdminSubject').value.trim();
+      const body = document.getElementById('contactAdminBody').value.trim();
+      if (!subject || !body) {
+        showAlert('Subject and message are required', 'error');
+        return;
+      }
+      const res = await api(`${API}/contact-admin`, 'POST', { subject, body });
+      if (res && !res.error) {
+        showAlert('Your email has been sent to admin');
+        document.getElementById('contactAdminSubject').value = '';
+        document.getElementById('contactAdminBody').value = '';
+      } else {
+        showAlert(res?.error || 'Failed to send email', 'error');
+      }
+    }
+
+    async function sendTeacherEmail() {
+      const teacher_id = document.getElementById('contactTeacherSelect').value;
+      const subject = document.getElementById('contactTeacherSubject').value.trim();
+      const body = document.getElementById('contactTeacherBody').value.trim();
+      if (!teacher_id || !subject || !body) {
+        showAlert('Teacher, subject, and message are required', 'error');
+        return;
+      }
+      const res = await api(`${API}/contact-teacher`, 'POST', { teacher_id, subject, body });
+      if (res && !res.error) {
+        showAlert('Your email has been sent to the teacher');
+        document.getElementById('contactTeacherSubject').value = '';
+        document.getElementById('contactTeacherBody').value = '';
+      } else {
+        showAlert(res?.error || 'Failed to send email', 'error');
+      }
+    }
+  </script>
+</body>
+</html>
