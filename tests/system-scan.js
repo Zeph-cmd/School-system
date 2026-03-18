@@ -3,7 +3,7 @@
   Run with server active on localhost:3000
 */
 
-const BASE = 'http://localhost:3000';
+const BASE = process.env.BASE_URL || 'http://localhost:3000';
 
 let passed = 0;
 let failed = 0;

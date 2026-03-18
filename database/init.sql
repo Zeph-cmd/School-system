@@ -225,10 +225,50 @@ CREATE TABLE IF NOT EXISTS teaching_assignments (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Messages (private/broadcast threads)
+CREATE TABLE IF NOT EXISTS messages (
+    message_id SERIAL PRIMARY KEY,
+    sender_id INT REFERENCES users(user_id),
+    recipient_id INT REFERENCES users(user_id),
+    class_id INT REFERENCES classes(class_id),
+    message_type VARCHAR(20) NOT NULL DEFAULT 'private',
+    subject TEXT,
+    body TEXT NOT NULL,
+    parent_message_id INT REFERENCES messages(message_id),
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Homework
+CREATE TABLE IF NOT EXISTS homework (
+    homework_id SERIAL PRIMARY KEY,
+    teacher_id INT NOT NULL REFERENCES teachers(teacher_id),
+    class_id INT NOT NULL REFERENCES classes(class_id),
+    subject_id INT NOT NULL REFERENCES subjects(subject_id),
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    due_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Audit logs
+CREATE TABLE IF NOT EXISTS audit_logs (
+    audit_id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(user_id),
+    username VARCHAR(100),
+    action VARCHAR(50) NOT NULL,
+    table_name VARCHAR(100),
+    record_id INT,
+    old_data JSONB,
+    new_data JSONB,
+    ip_address VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Email logs (admin outbound private emails)
 CREATE TABLE IF NOT EXISTS email_logs (
     email_log_id SERIAL PRIMARY KEY,
-    message_id INT,
+    message_id INT REFERENCES messages(message_id),
     recipient_email VARCHAR(255) NOT NULL,
     subject VARCHAR(255),
     message TEXT NOT NULL,

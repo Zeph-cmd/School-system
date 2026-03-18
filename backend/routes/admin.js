@@ -83,6 +83,7 @@ router.get('/homework', admin.getHomework);
 router.get('/pending-registrations', admin.getPendingRegistrations);
 router.put('/pending-registrations/:id/approve', admin.approveRegistration);
 router.put('/pending-registrations/:id/reject', admin.rejectRegistration);
+router.put('/pending-registrations/:id/reopen', admin.reopenRegistration);
 router.get('/pending-grade-changes', admin.getPendingGradeChanges);
 router.put('/pending-grade-changes/:id/approve', admin.approveGradeChange);
 router.put('/pending-grade-changes/:id/reject', admin.rejectGradeChange);

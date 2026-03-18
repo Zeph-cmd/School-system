@@ -27,11 +27,13 @@
         <a href="#" data-section="messages">&#128172; <span>Messages</span></a>
         <a href="#" data-section="auditlogs">&#128203; <span>Audit Logs</span></a>
       </nav>
-      <button class="logout-btn" onclick="logout()">Logout</button>
     </aside>
 
     <!-- Main Content -->
     <main class="main">
+      <div class="main-actions">
+        <button class="btn btn-danger" onclick="logout()">Logout</button>
+      </div>
       <div id="alert"></div>
 
       <div id="sec-dashboard" class="section active">
@@ -180,6 +182,12 @@
             <option value="student">Student</option>
             <option value="parent">Parent</option>
             <option value="teacher">Teacher</option>
+          </select>
+          <select id="approvalStatusFilter" style="padding:0.5rem; border-radius:6px; border:1px solid var(--border)">
+            <option value="pending" selected>Pending</option>
+            <option value="rejected">Rejected</option>
+            <option value="approved">Approved</option>
+            <option value="all">All Statuses</option>
           </select>
           <input type="text" id="approvalSearchFilter" placeholder="Search username/email..." style="padding:0.5rem; border-radius:6px; border:1px solid var(--border); width:220px">
           <button class="btn btn-primary btn-sm" onclick="loadApprovals()">Apply</button>
@@ -1133,9 +1141,11 @@
     // ── Pending Approvals ─────────────────────────
     async function loadApprovals() {
       const role = document.getElementById('approvalRoleFilter')?.value || '';
+      const status = document.getElementById('approvalStatusFilter')?.value || 'pending';
       const q = document.getElementById('approvalSearchFilter')?.value?.trim() || '';
       let url = `${API}/pending-registrations?`;
       if (role) url += `role=${encodeURIComponent(role)}&`;
+      if (status) url += `status=${encodeURIComponent(status)}&`;
       if (q) url += `q=${encodeURIComponent(q)}&`;
 
       const data = await api(url);
@@ -1144,10 +1154,15 @@
         const studentName = r.student_first_name ? `${r.student_first_name} ${r.student_last_name}` : '-';
         const date = r.created_at ? new Date(r.created_at).toLocaleDateString() : '';
         const badge = r.status === 'pending' ? 'badge-unpaid' : r.status === 'approved' ? 'badge-active' : 'badge-inactive';
-        const actions = r.status === 'pending' ? `
-          <button class="btn btn-success btn-sm" onclick="approveReg(${r.request_id})">Approve</button>
-          <button class="btn btn-danger btn-sm" onclick="rejectReg(${r.request_id})">Decline</button>
-        ` : '';
+        let actions = '';
+        if (r.status === 'pending') {
+          actions = `
+            <button class="btn btn-success btn-sm" onclick="approveReg(${r.request_id})">Approve</button>
+            <button class="btn btn-danger btn-sm" onclick="rejectReg(${r.request_id})">Decline</button>
+          `;
+        } else if (r.status === 'rejected') {
+          actions = `<button class="btn btn-primary btn-sm" onclick="reopenReg(${r.request_id})">Reopen</button>`;
+        }
         return `<tr>
           <td>${r.request_id}</td><td>${escHtml(r.username)}</td><td>${r.role}</td>
           <td>${r.email || '-'}</td><td>${r.phone || '-'}</td><td>${studentName}</td>
@@ -1161,8 +1176,10 @@
 
     function clearApprovalsFilters() {
       const roleEl = document.getElementById('approvalRoleFilter');
+      const statusEl = document.getElementById('approvalStatusFilter');
       const searchEl = document.getElementById('approvalSearchFilter');
       if (roleEl) roleEl.value = '';
+      if (statusEl) statusEl.value = 'pending';
       if (searchEl) searchEl.value = '';
       loadApprovals();
     }
@@ -1189,6 +1206,18 @@
         loadNotifBadge();
       } else {
         showAlert(res?.error || 'Reject failed', 'error');
+      }
+    }
+
+    async function reopenReg(id) {
+      if (!confirm('Reopen this rejected request and move it back to pending?')) return;
+      const res = await api(`${API}/pending-registrations/${id}/reopen`, 'PUT');
+      if (res && !res.error) {
+        showAlert(res.message || 'Request reopened');
+        loadApprovals();
+        loadNotifBadge();
+      } else {
+        showAlert(res?.error || 'Reopen failed', 'error');
       }
     }
 

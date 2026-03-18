@@ -1510,7 +1510,7 @@ async function getAuditLogs(req, res) {
 async function getPendingRegistrations(req, res) {
   try {
     await ensureRegistrationRequestsTable();
-    const { role, q } = req.query;
+    const { role, q, status } = req.query;
 
     const params = [];
     let query = `SELECT
@@ -1533,8 +1533,20 @@ async function getPendingRegistrations(req, res) {
           END AS request_type
        FROM registration_requests rr
        LEFT JOIN users u ON u.username = rr.username
-       WHERE rr.status = 'pending'
+       WHERE 1=1
          AND rr.role IN ('student', 'parent', 'teacher')`;
+
+    const cleanStatus = String(status || '').trim().toLowerCase();
+    if (!cleanStatus || cleanStatus === 'pending') {
+      query += " AND rr.status = 'pending'";
+    } else if (cleanStatus === 'all') {
+      // no status filter
+    } else if (['approved', 'rejected'].includes(cleanStatus)) {
+      params.push(cleanStatus);
+      query += ` AND rr.status = $${params.length}`;
+    } else {
+      return res.status(400).json({ error: 'Invalid status filter. Use pending, approved, rejected, or all.' });
+    }
 
     if (role) {
       params.push(role);
@@ -1694,6 +1706,48 @@ async function rejectRegistration(req, res) {
     res.json({ message: 'Request rejected' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to decline account' });
+  }
+}
+
+async function reopenRegistration(req, res) {
+  try {
+    await ensureRegistrationRequestsTable();
+    const { id } = req.params;
+
+    const reqRes = await pool.query('SELECT * FROM registration_requests WHERE request_id = $1', [id]);
+    if (reqRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Registration request not found' });
+    }
+    const regReq = reqRes.rows[0];
+    if (regReq.status !== 'rejected') {
+      return res.status(400).json({ error: `Only rejected requests can be reopened. Current status: ${regReq.status}` });
+    }
+
+    const userRes = await pool.query('SELECT user_id, status FROM users WHERE username = $1 LIMIT 1', [regReq.username]);
+    const account = userRes.rows[0] || null;
+
+    if (account && account.status === 'declined') {
+      await pool.query("UPDATE users SET status = 'pending' WHERE user_id = $1", [account.user_id]);
+    }
+
+    await pool.query(
+      `UPDATE registration_requests
+       SET status = 'pending', rejection_reason = NULL, reviewed_at = NULL, reviewed_by = NULL
+       WHERE request_id = $1`,
+      [regReq.request_id]
+    );
+
+    await req.audit(
+      'UPDATE',
+      'registration_requests',
+      parseInt(id, 10),
+      { status: 'rejected', rejection_reason: regReq.rejection_reason || null },
+      { status: 'pending', reopened: true }
+    );
+
+    res.json({ message: 'Request reopened and moved back to pending review.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to reopen registration request' });
   }
 }
 
@@ -2139,7 +2193,7 @@ module.exports = {
   getParentStudentLinks, createParentStudentLink,
   getActivityDashboard, getAuditLogs,
   getHomework, updateHomework, deleteHomework,
-  getPendingRegistrations, approveRegistration, rejectRegistration,
+  getPendingRegistrations, approveRegistration, rejectRegistration, reopenRegistration,
   getPendingGradeChanges, approveGradeChange, rejectGradeChange,
   getNotifications,
   getStudentRecord,
