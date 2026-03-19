@@ -32,6 +32,26 @@ async function logAction({ userId, username, action, tableName, recordId, oldDat
  */
 function auditMiddleware(req, res, next) {
   req.audit = (action, tableName, recordId, oldData, newData) => {
+    const meta = req.adminAccessNumber
+      ? {
+          admin_access: {
+            access_number: req.adminAccessNumber,
+            route: req.originalUrl || req.path,
+            method: req.method,
+          },
+        }
+      : null;
+
+    const mergedNewData = meta
+      ? {
+          ...(newData || {}),
+          _meta: {
+            ...((newData && typeof newData === 'object' && newData._meta) ? newData._meta : {}),
+            ...meta,
+          },
+        }
+      : newData;
+
     return logAction({
       userId: req.user?.user_id,
       username: req.user?.username,
@@ -39,7 +59,7 @@ function auditMiddleware(req, res, next) {
       tableName,
       recordId,
       oldData,
-      newData,
+      newData: mergedNewData,
       ip: req.ip,
     });
   };

@@ -2,10 +2,12 @@ const express = require('express');
 const router = express.Router();
 const authenticate = require('../middleware/auth');
 const authorize = require('../middleware/role');
+const { trackAdminIpAccess } = require('../middleware/adminAccessTracker');
 const admin = require('../controllers/adminController');
 
 // All admin routes require authentication + admin role
 router.use(authenticate, authorize('admin'));
+router.use(trackAdminIpAccess);
 
 // Dashboard
 router.get('/dashboard', admin.getDashboard);
