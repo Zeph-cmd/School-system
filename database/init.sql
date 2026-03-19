@@ -251,6 +251,21 @@ CREATE TABLE IF NOT EXISTS homework (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Deleted homework archive (teacher recovery bin)
+CREATE TABLE IF NOT EXISTS deleted_homework (
+    deleted_homework_id SERIAL PRIMARY KEY,
+    original_homework_id INT,
+    teacher_id INT NOT NULL REFERENCES teachers(teacher_id),
+    class_id INT NOT NULL REFERENCES classes(class_id),
+    subject_id INT NOT NULL REFERENCES subjects(subject_id),
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    due_date DATE,
+    original_created_at TIMESTAMP,
+    deleted_by_user_id INT REFERENCES users(user_id),
+    deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Audit logs
 CREATE TABLE IF NOT EXISTS audit_logs (
     audit_id SERIAL PRIMARY KEY,
@@ -275,3 +290,11 @@ CREATE TABLE IF NOT EXISTS email_logs (
     sent_by_admin INT NOT NULL REFERENCES users(user_id),
     sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+INSERT INTO system_settings (setting_key, setting_value)
+VALUES ('current_academic_year', CONCAT(EXTRACT(YEAR FROM CURRENT_DATE)::int, '/', EXTRACT(YEAR FROM CURRENT_DATE)::int + 1))
+ON CONFLICT (setting_key) DO NOTHING;
+
+INSERT INTO system_settings (setting_key, setting_value)
+VALUES ('grade_edit_enabled', 'false')
+ON CONFLICT (setting_key) DO NOTHING;

@@ -24,6 +24,13 @@
     <main class="main">
       <div id="alert"></div>
 
+      <div class="record-card" style="margin-bottom:1rem; max-width:320px;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Academic Year</label>
+          <select id="teacherYearSelect" onchange="reloadTeacherYearData()"></select>
+        </div>
+      </div>
+
       <!-- My Assignments/Classes -->
       <div id="sec-assignments" class="section active">
         <h1>My Teaching Assignments</h1>
@@ -69,7 +76,11 @@
           </div>
           <div class="form-group">
             <label>Term</label>
-            <input type="text" id="gradeTerm" placeholder="e.g. Term 1" value="Term 1">
+            <select id="gradeTerm">
+              <option value="Term 1">Term 1</option>
+              <option value="Term 2">Term 2</option>
+              <option value="Term 3">Term 3</option>
+            </select>
           </div>
         </div>
         <div class="table-container">
@@ -127,6 +138,13 @@
           <table><thead><tr>
             <th>Title</th><th>Subject</th><th>Class</th><th>Due Date</th><th>Created</th><th>Actions</th>
           </tr></thead><tbody id="homeworkTable"></tbody></table>
+        </div>
+
+        <h2 style="margin-top:1rem;">Deleted Homework (Recovery Bin)</h2>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>Title</th><th>Subject</th><th>Class</th><th>Deleted On</th><th>Restore</th>
+          </tr></thead><tbody id="deletedHomeworkTable"></tbody></table>
         </div>
       </div>
 
@@ -222,12 +240,48 @@
         document.getElementById(`sec-${section}`).classList.add('active');
         link.classList.add('active');
         if (section === 'messages') loadTeacherMessages();
+        if (section === 'homework') {
+          loadHomework();
+          loadDeletedHomework();
+        }
       });
     });
 
     let myAssignments = [];
     let myHomework = {};
     let gradeEditEnabled = false;
+
+    function defaultAcademicYear() {
+      const y = new Date().getFullYear();
+      return `${y}/${y + 1}`;
+    }
+
+    function buildAcademicYearOptions() {
+      const select = document.getElementById('teacherYearSelect');
+      if (!select) return;
+      const current = defaultAcademicYear();
+      const startYear = Number(current.split('/')[0]);
+      const years = [];
+      for (let y = startYear - 3; y <= startYear + 2; y += 1) {
+        years.push(`${y}/${y + 1}`);
+      }
+      select.innerHTML = years.map((y) => `<option value="${y}" ${y === current ? 'selected' : ''}>${y}</option>`).join('');
+    }
+
+    function selectedTeacherYear() {
+      return document.getElementById('teacherYearSelect')?.value || defaultAcademicYear();
+    }
+
+    function reloadTeacherYearData() {
+      const activeSection = document.querySelector('.section.active')?.id;
+      loadAssignments();
+      if (activeSection === 'sec-students') loadStudents();
+      if (activeSection === 'sec-grades') loadGradeStudents();
+      if (activeSection === 'sec-homework') {
+        loadHomework();
+        loadDeletedHomework();
+      }
+    }
 
     function populateHomeworkClassOptions() {
       const classMap = new Map();
@@ -264,7 +318,7 @@
 
     // Load assignments and populate class dropdowns
     async function loadAssignments() {
-      const data = await api(`${API}/assignments`);
+      const data = await api(`${API}/assignments?academic_year=${encodeURIComponent(selectedTeacherYear())}`);
       if (!data) return;
       myAssignments = data;
       await loadGradeEditStatus();
@@ -291,13 +345,17 @@
       // Keep homework form dropdowns aligned to this teacher's assignments.
       populateHomeworkClassOptions();
       syncHomeworkSubjectsByClass();
+
+      if (document.getElementById('sec-homework').classList.contains('active')) {
+        loadDeletedHomework();
+      }
     }
 
     async function loadStudents() {
       const classId = document.getElementById('studentClassSelect').value;
       if (!classId) { document.getElementById('studentsTable').innerHTML = ''; return; }
 
-      const data = await api(`${API}/students?class_id=${classId}`);
+      const data = await api(`${API}/students?class_id=${classId}&academic_year=${encodeURIComponent(selectedTeacherYear())}`);
       if (!data) return;
       document.getElementById('studentsTable').innerHTML = data.map(s => `<tr>
         <td>${s.admission_number}</td><td>${s.first_name} ${s.last_name}</td>
@@ -358,11 +416,11 @@
       const term = document.getElementById('gradeTerm').value;
       if (!classId || !subjectId) return;
 
-      const students = await api(`${API}/students?class_id=${classId}`);
+      const students = await api(`${API}/students?class_id=${classId}&academic_year=${encodeURIComponent(selectedTeacherYear())}`);
       if (!students) return;
 
       // Load existing grades
-      const existing = await api(`${API}/grades?class_id=${classId}&subject_id=${subjectId}`);
+      const existing = await api(`${API}/grades?class_id=${classId}&subject_id=${subjectId}&academic_year=${encodeURIComponent(selectedTeacherYear())}`);
       const gradeMap = new Map();
       if (existing) existing.forEach(g => {
         if (g.term === term) gradeMap.set(g.enrollment_id || 0, g);
@@ -404,7 +462,7 @@
 
     // ── Homework ─────────────────────────────────
     async function loadHomework() {
-      const data = await api(`${API}/homework`);
+      const data = await api(`${API}/homework?academic_year=${encodeURIComponent(selectedTeacherYear())}`);
       if (!data) return;
       myHomework = {};
       data.forEach(h => { myHomework[h.homework_id] = h; });
@@ -420,6 +478,28 @@
 
       populateHomeworkClassOptions();
       syncHomeworkSubjectsByClass();
+    }
+
+    async function loadDeletedHomework() {
+      const data = await api(`${API}/homework/deleted?academic_year=${encodeURIComponent(selectedTeacherYear())}`);
+      if (!data) return;
+      document.getElementById('deletedHomeworkTable').innerHTML = data.map(h => `<tr>
+        <td>${h.title}</td><td>${h.subject_name}</td><td>${h.class_name}</td>
+        <td>${h.deleted_at ? h.deleted_at.split('T')[0] : '-'}</td>
+        <td><button class="btn btn-success btn-sm" onclick="restoreHomeworkItem(${h.deleted_homework_id})">Restore</button></td>
+      </tr>`).join('') || '<tr><td colspan="5">No deleted homework in this academic year.</td></tr>';
+    }
+
+    async function restoreHomeworkItem(id) {
+      if (!confirm('Restore this homework item?')) return;
+      const res = await api(`${API}/homework/deleted/${id}/restore`, 'POST');
+      if (res && !res.error) {
+        showAlert(res.message || 'Homework restored');
+        loadHomework();
+        loadDeletedHomework();
+      } else {
+        showAlert(res?.error || 'Restore failed', 'error');
+      }
     }
 
     function openHomeworkForm() {
@@ -589,6 +669,7 @@
     }
 
     // Initial load
+    buildAcademicYearOptions();
     loadAssignments();
   </script>
 </body>

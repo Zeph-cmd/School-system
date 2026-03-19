@@ -3,6 +3,47 @@ const pool = require('../config/db');
 // Teacher sees: their assignments, their students, attendance, grades
 // Teacher can edit: attendance, grades for their classes
 
+function defaultAcademicYear() {
+  const y = new Date().getFullYear();
+  return `${y}/${y + 1}`;
+}
+
+function parseAcademicYearRange(value) {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(\d{4})\/(\d{4})$/);
+  if (!match) return null;
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  if (end !== start + 1) return null;
+  return { start, end };
+}
+
+function normalizeTerm(value) {
+  const term = String(value || '').trim().toLowerCase();
+  if (term === 'term 1' || term === '1' || term === 't1' || term === 'first') return 'Term 1';
+  if (term === 'term 2' || term === '2' || term === 't2' || term === 'second') return 'Term 2';
+  if (term === 'term 3' || term === '3' || term === 't3' || term === 'third') return 'Term 3';
+  return null;
+}
+
+async function getCurrentAcademicYearSetting() {
+  await ensureSystemSettingsTable();
+  await pool.query(
+    `INSERT INTO system_settings (setting_key, setting_value)
+     VALUES ('current_academic_year', $1)
+     ON CONFLICT (setting_key) DO NOTHING`,
+    [defaultAcademicYear()]
+  );
+  const result = await pool.query(
+    `SELECT setting_value
+     FROM system_settings
+     WHERE setting_key = 'current_academic_year'
+     LIMIT 1`
+  );
+  const year = String(result.rows[0]?.setting_value || '').trim();
+  return parseAcademicYearRange(year) ? year : defaultAcademicYear();
+}
+
 async function ensureSystemSettingsTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS system_settings (
@@ -32,6 +73,24 @@ async function ensureMessagesTable() {
       parent_message_id INT REFERENCES messages(message_id),
       is_read BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+async function ensureDeletedHomeworkTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS deleted_homework (
+      deleted_homework_id SERIAL PRIMARY KEY,
+      original_homework_id INT,
+      teacher_id INT NOT NULL REFERENCES teachers(teacher_id),
+      class_id INT NOT NULL REFERENCES classes(class_id),
+      subject_id INT NOT NULL REFERENCES subjects(subject_id),
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      due_date DATE,
+      original_created_at TIMESTAMP,
+      deleted_by_user_id INT REFERENCES users(user_id),
+      deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 }
@@ -114,6 +173,10 @@ async function getProfile(req, res) {
 // GET /api/teacher/assignments - classes and subjects assigned to this teacher
 async function getMyAssignments(req, res) {
   try {
+    const requestedYear = String(req.query.academic_year || '').trim();
+    const academicYear = parseAcademicYearRange(requestedYear)
+      ? requestedYear
+      : await getCurrentAcademicYearSetting();
     const result = await pool.query(`
       SELECT ta.*, s.subject_name, s.subject_code, c.class_name, c.class_code, c.level
       FROM teaching_assignments ta
@@ -121,9 +184,9 @@ async function getMyAssignments(req, res) {
       JOIN classes c ON ta.class_id = c.class_id
       JOIN teachers t ON ta.teacher_id = t.teacher_id
       JOIN users u ON ((u.email IS NOT NULL AND t.email IS NOT NULL AND LOWER(t.email) = LOWER(u.email)) OR LOWER(SPLIT_PART(COALESCE(t.email, ''), '@', 1)) = LOWER(u.username) OR LOWER(COALESCE(t.employee_number, '')) = LOWER(u.username) OR LOWER(COALESCE(t.first_name, '')) = LOWER(u.username))
-      WHERE u.user_id = $1
+      WHERE u.user_id = $1 AND ta.academic_year = $2
       ORDER BY ta.academic_year DESC, c.class_name
-    `, [req.user.user_id]);
+    `, [req.user.user_id, academicYear]);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch assignments' });
@@ -134,6 +197,10 @@ async function getMyAssignments(req, res) {
 async function getMyStudents(req, res) {
   try {
     const { class_id } = req.query;
+    const requestedYear = String(req.query.academic_year || '').trim();
+    const academicYear = parseAcademicYearRange(requestedYear)
+      ? requestedYear
+      : await getCurrentAcademicYearSetting();
     if (!class_id) {
       return res.status(400).json({ error: 'class_id query parameter required' });
     }
@@ -143,8 +210,8 @@ async function getMyStudents(req, res) {
       SELECT 1 FROM teaching_assignments ta
       JOIN teachers t ON ta.teacher_id = t.teacher_id
       JOIN users u ON ((u.email IS NOT NULL AND t.email IS NOT NULL AND LOWER(t.email) = LOWER(u.email)) OR LOWER(SPLIT_PART(COALESCE(t.email, ''), '@', 1)) = LOWER(u.username) OR LOWER(COALESCE(t.employee_number, '')) = LOWER(u.username) OR LOWER(COALESCE(t.first_name, '')) = LOWER(u.username))
-      WHERE u.user_id = $1 AND ta.class_id = $2
-    `, [req.user.user_id, class_id]);
+      WHERE u.user_id = $1 AND ta.class_id = $2 AND ta.academic_year = $3
+    `, [req.user.user_id, class_id, academicYear]);
 
     if (check.rows.length === 0) {
       return res.status(403).json({ error: 'You are not assigned to this class' });
@@ -167,9 +234,9 @@ async function getMyStudents(req, res) {
         ) AS parent_contacts
       FROM students s
       JOIN enrollments e ON s.student_id = e.student_id
-      WHERE e.class_id = $1 AND e.status = 'active'
+      WHERE e.class_id = $1 AND e.status = 'active' AND e.academic_year = $2
       ORDER BY s.last_name, s.first_name
-    `, [class_id]);
+    `, [class_id, academicYear]);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch students' });
@@ -269,6 +336,10 @@ async function markAttendance(req, res) {
 async function getGrades(req, res) {
   try {
     const { class_id, subject_id } = req.query;
+    const requestedYear = String(req.query.academic_year || '').trim();
+    const academicYear = parseAcademicYearRange(requestedYear)
+      ? requestedYear
+      : await getCurrentAcademicYearSetting();
     if (!class_id) {
       return res.status(400).json({ error: 'class_id required' });
     }
@@ -278,8 +349,8 @@ async function getGrades(req, res) {
       SELECT 1 FROM teaching_assignments ta
       JOIN teachers t ON ta.teacher_id = t.teacher_id
       JOIN users u ON ((u.email IS NOT NULL AND t.email IS NOT NULL AND LOWER(t.email) = LOWER(u.email)) OR LOWER(SPLIT_PART(COALESCE(t.email, ''), '@', 1)) = LOWER(u.username) OR LOWER(COALESCE(t.employee_number, '')) = LOWER(u.username) OR LOWER(COALESCE(t.first_name, '')) = LOWER(u.username))
-      WHERE u.user_id = $1 AND ta.class_id = $2
-    `, [req.user.user_id, class_id]);
+      WHERE u.user_id = $1 AND ta.class_id = $2 AND ta.academic_year = $3
+    `, [req.user.user_id, class_id, academicYear]);
     if (check.rows.length === 0) {
       return res.status(403).json({ error: 'You are not assigned to this class' });
     }
@@ -290,12 +361,12 @@ async function getGrades(req, res) {
       JOIN enrollments e ON g.enrollment_id = e.enrollment_id
       JOIN students s ON e.student_id = s.student_id
       JOIN subjects sub ON g.subject_id = sub.subject_id
-      WHERE e.class_id = $1
+      WHERE e.class_id = $1 AND e.academic_year = $2
     `;
-    const params = [class_id];
+    const params = [class_id, academicYear];
 
     if (subject_id) {
-      query += ' AND g.subject_id = $2';
+      query += ' AND g.subject_id = $3';
       params.push(subject_id);
     }
     query += ' ORDER BY s.last_name, sub.subject_name';
@@ -318,7 +389,8 @@ async function enterGrade(req, res) {
     }
 
     const { enrollment_id, subject_id, term, marks, grade_letter, remarks } = req.body;
-    if (!enrollment_id || !subject_id || !term) {
+    const normalizedTerm = normalizeTerm(term);
+    if (!enrollment_id || !subject_id || !normalizedTerm) {
       return res.status(400).json({ error: 'enrollment_id, subject_id, and term are required' });
     }
 
@@ -358,7 +430,7 @@ async function enterGrade(req, res) {
        FROM grade_change_requests
        WHERE enrollment_id = $1 AND subject_id = $2 AND term = $3 AND status = 'pending'
        LIMIT 1`,
-      [enrollment_id, subject_id, term]
+      [enrollment_id, subject_id, normalizedTerm]
     );
 
     let result;
@@ -382,7 +454,7 @@ async function enterGrade(req, res) {
          (enrollment_id, subject_id, term, proposed_marks, proposed_grade_letter, proposed_remarks, requested_by, status)
          VALUES ($1,$2,$3,$4,$5,$6,$7,'pending')
          RETURNING *`,
-        [enrollment_id, subject_id, term, marks || null, grade_letter || null, remarks || null, req.user.user_id]
+        [enrollment_id, subject_id, normalizedTerm, marks || null, grade_letter || null, remarks || null, req.user.user_id]
       );
       await req.audit('CREATE', 'grade_change_requests', result.rows[0].request_id, null, result.rows[0]);
     }
@@ -403,6 +475,10 @@ async function enterGrade(req, res) {
 // GET /api/teacher/homework - get homework assigned by this teacher
 async function getHomework(req, res) {
   try {
+    const requestedYear = String(req.query.academic_year || '').trim();
+    const academicYear = parseAcademicYearRange(requestedYear)
+      ? requestedYear
+      : await getCurrentAcademicYearSetting();
     const result = await pool.query(`
       SELECT h.*, s.subject_name, c.class_name
       FROM homework h
@@ -411,8 +487,15 @@ async function getHomework(req, res) {
       JOIN teachers t ON h.teacher_id = t.teacher_id
       JOIN users u ON ((u.email IS NOT NULL AND t.email IS NOT NULL AND LOWER(t.email) = LOWER(u.email)) OR LOWER(SPLIT_PART(COALESCE(t.email, ''), '@', 1)) = LOWER(u.username) OR LOWER(COALESCE(t.employee_number, '')) = LOWER(u.username) OR LOWER(COALESCE(t.first_name, '')) = LOWER(u.username))
       WHERE u.user_id = $1
+        AND EXISTS (
+          SELECT 1 FROM teaching_assignments ta
+          WHERE ta.teacher_id = h.teacher_id
+            AND ta.class_id = h.class_id
+            AND ta.subject_id = h.subject_id
+            AND ta.academic_year = $2
+        )
       ORDER BY h.created_at DESC
-    `, [req.user.user_id]);
+    `, [req.user.user_id, academicYear]);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch homework' });
@@ -498,6 +581,7 @@ async function updateHomework(req, res) {
 // DELETE /api/teacher/homework/:id - delete homework (only own)
 async function deleteHomework(req, res) {
   try {
+    await ensureDeletedHomeworkTable();
     const { id } = req.params;
 
     // Verify ownership
@@ -512,11 +596,98 @@ async function deleteHomework(req, res) {
       return res.status(404).json({ error: 'Homework not found or not yours' });
     }
 
+    await pool.query(
+      `INSERT INTO deleted_homework
+       (original_homework_id, teacher_id, class_id, subject_id, title, description, due_date, original_created_at, deleted_by_user_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        existing.rows[0].homework_id,
+        existing.rows[0].teacher_id,
+        existing.rows[0].class_id,
+        existing.rows[0].subject_id,
+        existing.rows[0].title,
+        existing.rows[0].description,
+        existing.rows[0].due_date,
+        existing.rows[0].created_at,
+        req.user.user_id,
+      ]
+    );
+
     await pool.query('DELETE FROM homework WHERE homework_id = $1', [id]);
     await req.audit('DELETE', 'homework', parseInt(id), existing.rows[0], null);
     res.json({ message: 'Homework deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete homework' });
+  }
+}
+
+async function getDeletedHomework(req, res) {
+  try {
+    await ensureDeletedHomeworkTable();
+    const requestedYear = String(req.query.academic_year || '').trim();
+    const academicYear = parseAcademicYearRange(requestedYear)
+      ? requestedYear
+      : await getCurrentAcademicYearSetting();
+
+    const result = await pool.query(`
+      SELECT dh.*, s.subject_name, c.class_name
+      FROM deleted_homework dh
+      JOIN subjects s ON dh.subject_id = s.subject_id
+      JOIN classes c ON dh.class_id = c.class_id
+      JOIN teachers t ON dh.teacher_id = t.teacher_id
+      JOIN users u ON ((u.email IS NOT NULL AND t.email IS NOT NULL AND LOWER(t.email) = LOWER(u.email)) OR LOWER(SPLIT_PART(COALESCE(t.email, ''), '@', 1)) = LOWER(u.username) OR LOWER(COALESCE(t.employee_number, '')) = LOWER(u.username) OR LOWER(COALESCE(t.first_name, '')) = LOWER(u.username))
+      WHERE u.user_id = $1
+        AND EXISTS (
+          SELECT 1 FROM teaching_assignments ta
+          WHERE ta.teacher_id = dh.teacher_id
+            AND ta.class_id = dh.class_id
+            AND ta.subject_id = dh.subject_id
+            AND ta.academic_year = $2
+        )
+      ORDER BY dh.deleted_at DESC
+    `, [req.user.user_id, academicYear]);
+
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch deleted homework' });
+  }
+}
+
+async function restoreDeletedHomework(req, res) {
+  try {
+    await ensureDeletedHomeworkTable();
+    const { id } = req.params;
+
+    const deletedRes = await pool.query(
+      `SELECT dh.*
+       FROM deleted_homework dh
+       JOIN teachers t ON dh.teacher_id = t.teacher_id
+       JOIN users u ON ((u.email IS NOT NULL AND t.email IS NOT NULL AND LOWER(t.email) = LOWER(u.email)) OR LOWER(SPLIT_PART(COALESCE(t.email, ''), '@', 1)) = LOWER(u.username) OR LOWER(COALESCE(t.employee_number, '')) = LOWER(u.username) OR LOWER(COALESCE(t.first_name, '')) = LOWER(u.username))
+       WHERE dh.deleted_homework_id = $1 AND u.user_id = $2
+       LIMIT 1`,
+      [id, req.user.user_id]
+    );
+    if (deletedRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Deleted homework not found or not yours' });
+    }
+
+    const row = deletedRes.rows[0];
+    const restored = await pool.query(
+      `INSERT INTO homework (teacher_id, class_id, subject_id, title, description, due_date)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING *`,
+      [row.teacher_id, row.class_id, row.subject_id, row.title, row.description, row.due_date]
+    );
+
+    await pool.query('DELETE FROM deleted_homework WHERE deleted_homework_id = $1', [id]);
+    await req.audit('CREATE', 'homework', restored.rows[0].homework_id, null, {
+      restored_from_deleted_homework_id: Number(id),
+      title: row.title,
+    });
+
+    res.status(201).json({ message: 'Homework restored', homework: restored.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to restore deleted homework' });
   }
 }
 
@@ -672,6 +843,7 @@ module.exports = {
   getAttendance, markAttendance,
   getGrades, getGradeEditStatus, enterGrade,
   getHomework, createHomework, updateHomework, deleteHomework,
+  getDeletedHomework, restoreDeletedHomework,
   getMessageParents, getMyMessages, sendParentMessage, getMessageConversation, replyMessage,
 };
 

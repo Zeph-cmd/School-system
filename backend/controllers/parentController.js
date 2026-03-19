@@ -4,11 +4,23 @@ const { sendEmail } = require('../utils/mailer');
 // Parent sees: their children, fees, results, attendance
 // Parent cannot edit anything (read-only)
 
+function parseAcademicYearRange(value) {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(\d{4})\/(\d{4})$/);
+  if (!match) return null;
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  if (end !== start + 1) return null;
+  return raw;
+}
+
 // GET /api/parent/children - get linked students
 async function getMyChildren(req, res) {
   try {
     const result = await pool.query(`
       SELECT s.*, ps.relationship,
+        ce.class_name AS current_class_name,
+        ce.academic_year AS current_academic_year,
         CASE
           WHEN COALESCE(s.tuition_amount_due, 0) <= 0 THEN 'null'
           WHEN COALESCE(s.tuition_amount_paid, 0) >= COALESCE(s.tuition_amount_due, 0) THEN 'fully_paid'
@@ -18,6 +30,14 @@ async function getMyChildren(req, res) {
       JOIN parent_student ps ON s.student_id = ps.student_id
       JOIN parents p ON ps.parent_id = p.parent_id
       JOIN users u ON ((u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email)) OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username))
+      LEFT JOIN LATERAL (
+        SELECT c.class_name, e.academic_year
+        FROM enrollments e
+        JOIN classes c ON c.class_id = e.class_id
+        WHERE e.student_id = s.student_id
+        ORDER BY CASE WHEN e.status = 'active' THEN 0 ELSE 1 END, e.date_enrolled DESC, e.enrollment_id DESC
+        LIMIT 1
+      ) ce ON TRUE
       WHERE u.user_id = $1
       ORDER BY s.last_name, s.first_name
     `, [req.user.user_id]);
@@ -31,6 +51,7 @@ async function getMyChildren(req, res) {
 async function getChildFees(req, res) {
   try {
     const { student_id } = req.query;
+    const academicYear = parseAcademicYearRange(req.query.academic_year);
     if (!student_id) {
       return res.status(400).json({ error: 'student_id required' });
     }
@@ -53,8 +74,9 @@ async function getChildFees(req, res) {
       JOIN enrollments e ON f.enrollment_id = e.enrollment_id
       JOIN classes c ON e.class_id = c.class_id
       WHERE e.student_id = $1
+        AND ($2::text IS NULL OR e.academic_year = $2)
       ORDER BY f.created_at DESC
-    `, [student_id]);
+    `, [student_id, academicYear]);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch fees' });
@@ -65,6 +87,7 @@ async function getChildFees(req, res) {
 async function getChildResults(req, res) {
   try {
     const { student_id } = req.query;
+    const academicYear = parseAcademicYearRange(req.query.academic_year);
     if (!student_id) {
       return res.status(400).json({ error: 'student_id required' });
     }
@@ -86,8 +109,9 @@ async function getChildResults(req, res) {
       JOIN enrollments e ON r.enrollment_id = e.enrollment_id
       JOIN classes c ON e.class_id = c.class_id
       WHERE e.student_id = $1
+        AND ($2::text IS NULL OR e.academic_year = $2)
       ORDER BY r.term, r.created_at DESC
-    `, [student_id]);
+    `, [student_id, academicYear]);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch results' });
@@ -98,6 +122,7 @@ async function getChildResults(req, res) {
 async function getChildGrades(req, res) {
   try {
     const { student_id } = req.query;
+    const academicYear = parseAcademicYearRange(req.query.academic_year);
     if (!student_id) {
       return res.status(400).json({ error: 'student_id required' });
     }
@@ -120,8 +145,9 @@ async function getChildGrades(req, res) {
       JOIN subjects sub ON g.subject_id = sub.subject_id
       JOIN classes c ON e.class_id = c.class_id
       WHERE e.student_id = $1
+        AND ($2::text IS NULL OR e.academic_year = $2)
       ORDER BY g.term, sub.subject_name
-    `, [student_id]);
+    `, [student_id, academicYear]);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch grades' });
@@ -132,6 +158,7 @@ async function getChildGrades(req, res) {
 async function getChildAttendance(req, res) {
   try {
     const { student_id } = req.query;
+    const academicYear = parseAcademicYearRange(req.query.academic_year);
     if (!student_id) {
       return res.status(400).json({ error: 'student_id required' });
     }
@@ -153,8 +180,9 @@ async function getChildAttendance(req, res) {
       JOIN enrollments e ON a.enrollment_id = e.enrollment_id
       JOIN classes c ON e.class_id = c.class_id
       WHERE e.student_id = $1
+        AND ($2::text IS NULL OR e.academic_year = $2)
       ORDER BY a.date_attended DESC
-    `, [student_id]);
+    `, [student_id, academicYear]);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch attendance' });
@@ -165,6 +193,7 @@ async function getChildAttendance(req, res) {
 async function getChildHomework(req, res) {
   try {
     const { student_id } = req.query;
+    const academicYear = parseAcademicYearRange(req.query.academic_year);
     if (!student_id) {
       return res.status(400).json({ error: 'student_id required' });
     }
@@ -187,10 +216,18 @@ async function getChildHomework(req, res) {
       JOIN subjects sub ON h.subject_id = sub.subject_id
       JOIN classes c ON h.class_id = c.class_id
       JOIN teachers t ON h.teacher_id = t.teacher_id
-      JOIN enrollments e ON e.class_id = h.class_id AND e.status = 'active'
-      WHERE e.student_id = $1
+      WHERE EXISTS (
+        SELECT 1
+        FROM enrollments e
+        WHERE e.class_id = h.class_id
+          AND e.student_id = $1
+          AND (
+            ($2::text IS NULL AND e.status = 'active')
+            OR ($2::text IS NOT NULL AND e.academic_year = $2)
+          )
+      )
       ORDER BY h.created_at DESC
-    `, [student_id]);
+    `, [student_id, academicYear]);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch homework' });

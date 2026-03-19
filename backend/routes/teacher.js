@@ -22,9 +22,11 @@ router.post('/grades', teacher.enterGrade);
 
 // Homework
 router.get('/homework', teacher.getHomework);
+router.get('/homework/deleted', teacher.getDeletedHomework);
 router.post('/homework', teacher.createHomework);
 router.put('/homework/:id', teacher.updateHomework);
 router.delete('/homework/:id', teacher.deleteHomework);
+router.post('/homework/deleted/:id/restore', teacher.restoreDeletedHomework);
 
 // Messages (teacher <-> parents in assigned classes only)
 router.get('/messages/parents', teacher.getMessageParents);

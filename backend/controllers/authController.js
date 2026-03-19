@@ -27,6 +27,12 @@ async function ensureSystemSettingsTable() {
      )
      ON CONFLICT (setting_key) DO NOTHING`
   );
+  await pool.query(
+    `INSERT INTO system_settings (setting_key, setting_value)
+     VALUES ('current_academic_year', $1)
+     ON CONFLICT (setting_key) DO NOTHING`,
+    [`${new Date().getFullYear()}/${new Date().getFullYear() + 1}`]
+  );
 }
 
 async function ensureRegistrationRequestsTable() {

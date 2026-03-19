@@ -52,6 +52,13 @@
           </div>
           <button class="btn btn-primary" onclick="changeRecoveryEmail()">Change</button>
         </div>
+        <div class="record-card" style="margin-bottom:1rem; display:flex; align-items:center; justify-content:space-between; gap:1rem;">
+          <div>
+            <div style="font-weight:700;">Current Academic Year</div>
+            <div id="academicYearText" style="color:var(--text-light); font-size:0.9rem;">Loading academic year...</div>
+          </div>
+          <button class="btn btn-primary" onclick="changeAcademicYear()">Set Academic Year</button>
+        </div>
         <div class="stats-grid" id="statsGrid"></div>
       </div>
 
@@ -209,6 +216,13 @@
           <table><thead><tr>
             <th>ID</th><th>Student</th><th>ADM</th><th>Class</th><th>Subject</th><th>Term</th><th>Marks</th><th>Grade</th><th>By Teacher</th><th>Submitted</th><th>Actions</th>
           </tr></thead><tbody id="pendingGradeChangesTable"></tbody></table>
+        </div>
+
+        <h2 style="margin-top:1.2rem;">Rejected Account Recovery</h2>
+        <div class="table-container">
+          <table><thead><tr>
+            <th>ID</th><th>Username</th><th>Role</th><th>Email</th><th>Phone</th><th>Rejected On</th><th>Action</th>
+          </tr></thead><tbody id="rejectedRecoveryTable"></tbody></table>
         </div>
       </div>
 
@@ -436,6 +450,7 @@
       `;
       await loadGradeEditStatus();
       await loadRecoveryEmailStatus();
+      await loadAcademicYearSettings();
     }
 
     async function loadGradeEditStatus() {
@@ -503,6 +518,40 @@
         loadRecoveryEmailStatus();
       } else {
         showAlert(res?.error || 'Failed to update recovery email', 'error');
+      }
+    }
+
+    async function loadAcademicYearSettings() {
+      const data = await api(`${API}/academic-year-settings`);
+      const textEl = document.getElementById('academicYearText');
+      if (!textEl) return;
+      if (!data || data.error) {
+        textEl.textContent = 'Unable to load academic year settings.';
+        return;
+      }
+      textEl.textContent = `Current: ${data.current_academic_year} | Next Promotion Year: ${data.next_academic_year} | Terms: ${(data.terms || []).join(', ')}`;
+    }
+
+    async function changeAcademicYear() {
+      const current = await api(`${API}/academic-year-settings`);
+      if (!current || current.error) {
+        showAlert(current?.error || 'Unable to load current academic year', 'error');
+        return;
+      }
+      const nextValue = prompt('Set current academic year (format: YYYY/YYYY):', current.current_academic_year || '');
+      if (nextValue === null) return;
+      const clean = String(nextValue || '').trim();
+      if (!/^\d{4}\/\d{4}$/.test(clean)) {
+        showAlert('Academic year must be in format YYYY/YYYY', 'error');
+        return;
+      }
+
+      const res = await api(`${API}/academic-year-settings`, 'PUT', { current_academic_year: clean });
+      if (res && !res.error) {
+        showAlert(res.message || 'Academic year updated');
+        loadAcademicYearSettings();
+      } else {
+        showAlert(res?.error || 'Failed to update academic year', 'error');
       }
     }
 
@@ -655,16 +704,40 @@
     async function viewClassStudentsById(classId) {
       const classInfo = dataCache.classes?.[classId];
       const className = classInfo?.class_name || `Class ${classId}`;
-      const allEnrollments = await api(`${API}/enrollments`);
+      const allEnrollments = await api(`${API}/enrollments?class_id=${encodeURIComponent(classId)}`);
       if (!allEnrollments || !Array.isArray(allEnrollments)) {
         showAlert('Unable to load class students', 'error');
         return;
       }
 
       const rows = allEnrollments.filter(e => String(e.class_id) === String(classId));
-      const body = rows.length === 0
-        ? '<div class="alert">No students enrolled in this class.</div>'
-        : `<div class="table-container"><table><thead><tr><th>Student</th><th>Year</th><th>Status</th></tr></thead><tbody>${rows.map(r => `<tr><td>${escHtml(r.student_name || '-')}</td><td>${escHtml(r.academic_year || '-')}</td><td>${statusBadge(r.status || '-')}</td></tr>`).join('')}</tbody></table></div>`;
+      if (rows.length === 0) {
+        document.getElementById('modalTitle').textContent = `Class Students - ${className}`;
+        const form = document.getElementById('modalForm');
+        form.innerHTML = '<div class="alert">No students enrolled in this class.</div><div class="modal-actions"><button type="button" class="btn" onclick="closeModal()">Close</button></div>';
+        form.onsubmit = (e) => e.preventDefault();
+        document.getElementById('modalOverlay').classList.add('show');
+        return;
+      }
+
+      const yearOptions = [...new Set(rows.map(r => String(r.academic_year || '').trim()).filter(Boolean))].sort().reverse();
+      const selectedYear = yearOptions[0] || '';
+      const renderRows = (year) => rows
+        .filter(r => !year || String(r.academic_year || '').trim() === year)
+        .map(r => `<tr><td>${escHtml(r.student_name || '-')}</td><td>${escHtml(r.academic_year || '-')}</td><td>${statusBadge(r.status || '-')}</td></tr>`)
+        .join('') || '<tr><td colspan="3">No students for selected academic year.</td></tr>';
+
+      const body = `
+        <div class="form-group" style="max-width:260px;margin-bottom:0.75rem;">
+          <label>Academic Year</label>
+          <select id="viewClassYearFilter" onchange="document.getElementById('viewClassYearTbody').innerHTML = window.__renderViewClassRows(this.value)">
+            ${yearOptions.map(y => `<option value="${escHtml(y)}" ${y === selectedYear ? 'selected' : ''}>${escHtml(y)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="table-container"><table><thead><tr><th>Student</th><th>Year</th><th>Status</th></tr></thead><tbody id="viewClassYearTbody">${renderRows(selectedYear)}</tbody></table></div>
+      `;
+
+      window.__renderViewClassRows = renderRows;
 
       document.getElementById('modalTitle').textContent = `Class Students - ${className}`;
       const form = document.getElementById('modalForm');
@@ -782,10 +855,8 @@
       const actionLabel = action === 'promote' ? 'promote' : action === 'demote' ? 'demote' : 'keep current class for';
       if (!confirm(`Are you sure you want to ${actionLabel} ${student?.first_name || 'this student'} ${student?.last_name || ''}?`)) return;
 
-      const y = new Date().getFullYear();
       const res = await api(`${API}/students/${studentId}/reclassify`, 'POST', {
         action,
-        academic_year: `${y}/${y + 1}`,
       });
       if (res && !res.error) {
         showAlert(res.message || 'Student class updated');
@@ -898,7 +969,7 @@
         urlFn: (id) => `${API}/assignments/${id}`,
         fields: [
           { name: 'academic_year', label: 'Academic Year', required: true },
-          { name: 'term', label: 'Term', required: true },
+          { name: 'term', label: 'Term', type: 'select', options: ['Term 1', 'Term 2', 'Term 3'], required: true },
         ],
         onSuccess: () => { loadAssignments(); },
       },
@@ -966,7 +1037,6 @@
           { name: 'date_of_birth', label: 'Date of Birth', type: 'date', required: true },
           { name: 'guardian_name', label: 'Parent/Guardian Name', placeholder: 'e.g. John Doe', required: true },
           { name: 'starting_class_id', label: 'Starting Class', type: 'select', options: [], required: true },
-          { name: 'starting_academic_year', label: 'Starting Academic Year', placeholder: 'e.g. 2026/2027', required: true },
           { name: 'tuition_amount_due', label: 'Tuition Due', type: 'number', placeholder: '0.00', required: true },
           { name: 'tuition_amount_paid', label: 'Tuition Paid', type: 'number', placeholder: '0.00', required: true },
         ],
@@ -1040,7 +1110,7 @@
           { name: 'subject_id', label: 'Subject ID', type: 'number', required: true },
           { name: 'class_id', label: 'Class ID', type: 'number', required: true },
           { name: 'academic_year', label: 'Academic Year', required: true, placeholder: '2025/2026' },
-          { name: 'term', label: 'Term', required: true },
+          { name: 'term', label: 'Term', type: 'select', options: ['Term 1', 'Term 2', 'Term 3'], required: true },
         ],
         onSuccess: () => { loadAssignments(); },
       },
@@ -1081,6 +1151,14 @@
       if (type === 'teacher') {
         const empField = config.fields.find(f => f.name === 'employee_number');
         if (empField) empField.value = generateRandomId('EMP');
+      }
+
+      if (type === 'assignment') {
+        const settings = await api(`${API}/academic-year-settings`);
+        const yearField = config.fields.find(f => f.name === 'academic_year');
+        if (yearField && settings && !settings.error) {
+          yearField.value = settings.current_academic_year;
+        }
       }
 
       document.getElementById('modalTitle').textContent = config.title;
@@ -1172,6 +1250,24 @@
       }).join('') || '<tr><td colspan="9">No registration requests.</td></tr>';
 
       await loadPendingGradeChanges();
+      await loadRejectedRecoveryTable();
+    }
+
+    async function loadRejectedRecoveryTable() {
+      const data = await api(`${API}/pending-registrations?status=rejected`);
+      if (!data) return;
+      document.getElementById('rejectedRecoveryTable').innerHTML = data.map(r => {
+        const reviewedDate = r.reviewed_at ? new Date(r.reviewed_at).toLocaleDateString() : '-';
+        return `<tr>
+          <td>${r.request_id}</td>
+          <td>${escHtml(r.username)}</td>
+          <td>${escHtml(r.role)}</td>
+          <td>${escHtml(r.email || '-')}</td>
+          <td>${escHtml(r.phone || '-')}</td>
+          <td>${reviewedDate}</td>
+          <td><button class="btn btn-primary btn-sm" onclick="reopenReg(${r.request_id})">Restore to Pending</button></td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="7">No rejected registrations to recover.</td></tr>';
     }
 
     function clearApprovalsFilters() {

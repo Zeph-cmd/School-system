@@ -88,7 +88,7 @@
         </div>
         <div class="table-container">
           <table><thead><tr>
-            <th>Adm No</th><th>Name</th><th>Gender</th><th>DOB</th><th>Relationship</th><th>Tuition Due</th><th>Tuition Paid</th><th>Tuition Status</th><th>Status</th>
+            <th>Adm No</th><th>Name</th><th>Gender</th><th>DOB</th><th>Current Class</th><th>Current Year</th><th>Relationship</th><th>Tuition Due</th><th>Tuition Paid</th><th>Tuition Status</th><th>Status</th>
           </tr></thead><tbody id="childrenTable"></tbody></table>
         </div>
       </div>
@@ -101,6 +101,10 @@
           <select id="gradeChildSelect" onchange="loadGrades()">
             <option value="">Choose...</option>
           </select>
+        </div>
+        <div class="form-group" style="max-width:300px;margin-bottom:1rem">
+          <label>Academic Year</label>
+          <select id="gradeYearSelect" onchange="loadGrades()"></select>
         </div>
         <div class="table-container">
           <table><thead><tr>
@@ -118,6 +122,10 @@
             <option value="">Choose...</option>
           </select>
         </div>
+        <div class="form-group" style="max-width:300px;margin-bottom:1rem">
+          <label>Academic Year</label>
+          <select id="feeYearSelect" onchange="loadFees()"></select>
+        </div>
         <div class="stats-grid" id="feeSummary" style="margin-bottom:1rem"></div>
         <div class="table-container">
           <table><thead><tr>
@@ -134,6 +142,10 @@
           <select id="hwChildSelect" onchange="loadHomework()">
             <option value="">Choose...</option>
           </select>
+        </div>
+        <div class="form-group" style="max-width:300px;margin-bottom:1rem">
+          <label>Academic Year</label>
+          <select id="hwYearSelect" onchange="loadHomework()"></select>
         </div>
         <div class="table-container">
           <table><thead><tr>
@@ -279,6 +291,29 @@
     let myChildren = [];
     let currentParentProfile = null;
 
+    function defaultAcademicYear() {
+      const y = new Date().getFullYear();
+      return `${y}/${y + 1}`;
+    }
+
+    function buildAcademicYearSelects(children) {
+      const years = new Set();
+      const current = defaultAcademicYear();
+      const start = Number(current.split('/')[0]);
+      for (let y = start - 3; y <= start + 1; y += 1) {
+        years.add(`${y}/${y + 1}`);
+      }
+      (children || []).forEach((c) => {
+        if (c.current_academic_year) years.add(c.current_academic_year);
+      });
+      const sorted = Array.from(years).sort().reverse();
+      const options = sorted.map((y) => `<option value="${y}" ${y === current ? 'selected' : ''}>${y}</option>`).join('');
+      ['gradeYearSelect', 'feeYearSelect', 'hwYearSelect'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = options;
+      });
+    }
+
     async function loadCurrentParentProfile() {
       try {
         const res = await fetch('/api/auth/me', { headers });
@@ -375,25 +410,28 @@
       document.getElementById('childrenTable').innerHTML = data.map(c => `<tr>
         <td>${c.admission_number}</td><td>${c.first_name} ${c.last_name}</td>
         <td>${c.gender}</td><td>${c.date_of_birth?.split('T')[0] || ''}</td>
+        <td>${c.current_class_name || '-'}</td><td>${c.current_academic_year || '-'}</td>
         <td>${c.relationship || '-'}</td>
         <td>$${parseFloat(c.tuition_amount_due || 0).toFixed(2)}</td>
         <td>$${parseFloat(c.tuition_amount_paid || 0).toFixed(2)}</td>
         <td>${tuitionStatusBadge(c.tuition_status)}</td>
         <td>${statusBadge(c.status)}</td>
-      </tr>`).join('') || '<tr><td colspan="9">No children linked. Contact school admin.</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="11">No children linked. Contact school admin.</td></tr>';
 
       // Populate all child select dropdowns
       const opts = data.map(c => `<option value="${c.student_id}">${c.first_name} ${c.last_name}</option>`).join('');
       ['gradeChildSelect', 'feeChildSelect', 'hwChildSelect'].forEach(id => {
         document.getElementById(id).innerHTML = '<option value="">Choose...</option>' + opts;
       });
+      buildAcademicYearSelects(data);
     }
 
     async function loadGrades() {
       const studentId = document.getElementById('gradeChildSelect').value;
+      const year = document.getElementById('gradeYearSelect')?.value || '';
       if (!studentId) return;
 
-      const data = await api(`${API}/grades?student_id=${studentId}`);
+      const data = await api(`${API}/grades?student_id=${studentId}&academic_year=${encodeURIComponent(year)}`);
       if (!data) return;
       document.getElementById('gradesTable').innerHTML = data.map(g => `<tr>
         <td>${g.subject_name}</td><td>${g.term}</td>
@@ -403,9 +441,10 @@
 
     async function loadFees() {
       const studentId = document.getElementById('feeChildSelect').value;
+      const year = document.getElementById('feeYearSelect')?.value || '';
       if (!studentId) return;
 
-      const data = await api(`${API}/fees?student_id=${studentId}`);
+      const data = await api(`${API}/fees?student_id=${studentId}&academic_year=${encodeURIComponent(year)}`);
       if (!data) return;
 
       const child = myChildren.find(c => String(c.student_id) === String(studentId));
@@ -433,9 +472,10 @@
 
     async function loadHomework() {
       const studentId = document.getElementById('hwChildSelect').value;
+      const year = document.getElementById('hwYearSelect')?.value || '';
       if (!studentId) return;
 
-      const data = await api(`${API}/homework?student_id=${studentId}`);
+      const data = await api(`${API}/homework?student_id=${studentId}&academic_year=${encodeURIComponent(year)}`);
       if (!data) return;
       document.getElementById('homeworkTable').innerHTML = data.map(h => `<tr>
         <td>${h.title}</td><td>${h.subject_name}</td><td>${h.class_name}</td>

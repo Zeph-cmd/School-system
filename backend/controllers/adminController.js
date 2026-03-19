@@ -8,6 +8,32 @@ function defaultAcademicYear() {
   return `${y}/${y + 1}`;
 }
 
+const ALLOWED_TERMS = ['Term 1', 'Term 2', 'Term 3'];
+
+function parseAcademicYearRange(value) {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(\d{4})\/(\d{4})$/);
+  if (!match) return null;
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  if (end !== start + 1) return null;
+  return { start, end };
+}
+
+function nextAcademicYear(value) {
+  const parsed = parseAcademicYearRange(value);
+  if (!parsed) return defaultAcademicYear();
+  return `${parsed.start + 1}/${parsed.end + 1}`;
+}
+
+function normalizeTerm(value) {
+  const term = String(value || '').trim().toLowerCase();
+  if (term === 'term 1' || term === '1' || term === 't1' || term === 'first') return 'Term 1';
+  if (term === 'term 2' || term === '2' || term === 't2' || term === 'second') return 'Term 2';
+  if (term === 'term 3' || term === '3' || term === 't3' || term === 'third') return 'Term 3';
+  return null;
+}
+
 async function ensureSystemSettingsTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS system_settings (
@@ -30,6 +56,68 @@ async function ensureSystemSettingsTable() {
      )
      ON CONFLICT (setting_key) DO NOTHING`
   );
+  await pool.query(
+    `INSERT INTO system_settings (setting_key, setting_value)
+     VALUES ('current_academic_year', $1)
+     ON CONFLICT (setting_key) DO NOTHING`,
+    [defaultAcademicYear()]
+  );
+}
+
+async function getCurrentAcademicYearSetting() {
+  await ensureSystemSettingsTable();
+  const result = await pool.query(
+    `SELECT setting_value
+     FROM system_settings
+     WHERE setting_key = 'current_academic_year'
+     LIMIT 1`
+  );
+  const stored = String(result.rows[0]?.setting_value || '').trim();
+  return parseAcademicYearRange(stored) ? stored : defaultAcademicYear();
+}
+
+async function getAcademicYearSettings(req, res) {
+  try {
+    const currentAcademicYear = await getCurrentAcademicYearSetting();
+    res.json({
+      current_academic_year: currentAcademicYear,
+      next_academic_year: nextAcademicYear(currentAcademicYear),
+      terms: ALLOWED_TERMS,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch academic year settings' });
+  }
+}
+
+async function setAcademicYearSettings(req, res) {
+  try {
+    const currentAcademicYear = String(req.body.current_academic_year || '').trim();
+    if (!parseAcademicYearRange(currentAcademicYear)) {
+      return res.status(400).json({ error: 'current_academic_year must be in format YYYY/YYYY (for example 2026/2027)' });
+    }
+
+    await ensureSystemSettingsTable();
+    await pool.query(
+      `UPDATE system_settings
+       SET setting_value = $1, updated_at = NOW(), updated_by = $2
+       WHERE setting_key = 'current_academic_year'`,
+      [currentAcademicYear, req.user.user_id]
+    );
+
+    await req.audit('UPDATE', 'system_settings', null, null, {
+      setting_key: 'current_academic_year',
+      setting_value: currentAcademicYear,
+    });
+
+    res.json({
+      message: 'Academic year updated successfully.',
+      current_academic_year: currentAcademicYear,
+      next_academic_year: nextAcademicYear(currentAcademicYear),
+      terms: ALLOWED_TERMS,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update academic year settings' });
+  }
 }
 
 async function ensureGradeChangeRequestsTable() {
@@ -290,9 +378,8 @@ async function createStudent(req, res) {
       tuition_amount_due,
       tuition_amount_paid,
       starting_class_id,
-      starting_academic_year,
     } = req.body;
-    if (!first_name || !last_name || !gender || !date_of_birth || !guardian_name || !starting_class_id || !starting_academic_year || tuition_amount_due === undefined || tuition_amount_due === '' || tuition_amount_paid === undefined || tuition_amount_paid === '') {
+    if (!first_name || !last_name || !gender || !date_of_birth || !guardian_name || !starting_class_id || tuition_amount_due === undefined || tuition_amount_due === '' || tuition_amount_paid === undefined || tuition_amount_paid === '') {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -341,7 +428,7 @@ async function createStudent(req, res) {
     await req.audit('CREATE', 'students', result.rows[0].student_id, null, result.rows[0]);
 
     if (startClassId) {
-      const acadYear = (starting_academic_year || '').trim() || defaultAcademicYear();
+      const acadYear = await getCurrentAcademicYearSetting();
       await pool.query(
         `INSERT INTO enrollments (student_id, class_id, academic_year, status)
          VALUES ($1,$2,$3,'active')`,
@@ -520,7 +607,7 @@ async function createTeacher(req, res) {
 async function promoteStudent(req, res) {
   try {
     const { id } = req.params;
-    const { to_class_id, academic_year } = req.body;
+    const { to_class_id } = req.body;
     if (!to_class_id) {
       return res.status(400).json({ error: 'to_class_id is required' });
     }
@@ -548,7 +635,7 @@ async function promoteStudent(req, res) {
       await pool.query("UPDATE enrollments SET status = 'completed' WHERE enrollment_id = $1", [active.rows[0].enrollment_id]);
     }
 
-    const acadYear = (academic_year || '').trim() || defaultAcademicYear();
+    const acadYear = nextAcademicYear(await getCurrentAcademicYearSetting());
     const result = await pool.query(
       `INSERT INTO enrollments (student_id, class_id, academic_year, status)
        VALUES ($1,$2,$3,'active') RETURNING *`,
@@ -575,7 +662,7 @@ async function reclassifyStudent(req, res) {
   try {
     const { id } = req.params;
     const action = String(req.body.action || '').trim().toLowerCase();
-    const academicYear = (req.body.academic_year || '').trim() || defaultAcademicYear();
+    const academicYear = nextAcademicYear(await getCurrentAcademicYearSetting());
 
     if (!['promote', 'demote', 'keep'].includes(action)) {
       return res.status(400).json({ error: 'action must be one of: promote, demote, keep' });
@@ -1047,13 +1134,25 @@ async function deleteSubject(req, res) {
 // ─── ENROLLMENTS ──────────────────────────────────────────────────
 async function getEnrollments(req, res) {
   try {
+    const { class_id, academic_year } = req.query;
+    const params = [];
+    let where = 'WHERE 1=1';
+    if (class_id) {
+      params.push(class_id);
+      where += ` AND e.class_id = $${params.length}`;
+    }
+    if (academic_year) {
+      params.push(academic_year);
+      where += ` AND e.academic_year = $${params.length}`;
+    }
     const result = await pool.query(`
       SELECT e.*, s.first_name || ' ' || s.last_name AS student_name, c.class_name
       FROM enrollments e
       JOIN students s ON e.student_id = s.student_id
       JOIN classes c ON e.class_id = c.class_id
+      ${where}
       ORDER BY e.enrollment_id
-    `);
+    `, params);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch enrollments' });
@@ -1063,12 +1162,13 @@ async function getEnrollments(req, res) {
 async function createEnrollment(req, res) {
   try {
     const { student_id, class_id, academic_year } = req.body;
-    if (!student_id || !class_id || !academic_year) {
+    if (!student_id || !class_id) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    const yearToUse = String(academic_year || '').trim() || await getCurrentAcademicYearSetting();
     const result = await pool.query(
       'INSERT INTO enrollments (student_id, class_id, academic_year) VALUES ($1,$2,$3) RETURNING *',
-      [student_id, class_id, academic_year]
+      [student_id, class_id, yearToUse]
     );
     await req.audit('CREATE', 'enrollments', result.rows[0].enrollment_id, null, result.rows[0]);
     res.status(201).json(result.rows[0]);
@@ -1237,9 +1337,14 @@ async function getAssignments(req, res) {
 async function createAssignment(req, res) {
   try {
     const { teacher_id, subject_id, class_id, academic_year, term } = req.body;
-    if (!teacher_id || !subject_id || !class_id || !academic_year || !term) {
+    if (!teacher_id || !subject_id || !class_id || !term) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    const normTerm = normalizeTerm(term);
+    if (!normTerm) {
+      return res.status(400).json({ error: 'term must be one of: Term 1, Term 2, Term 3' });
+    }
+    const yearToUse = String(academic_year || '').trim() || await getCurrentAcademicYearSetting();
 
     const [teacherRes, subjectRes, classRes] = await Promise.all([
       pool.query('SELECT first_name, last_name FROM teachers WHERE teacher_id = $1', [teacher_id]),
@@ -1258,19 +1363,19 @@ async function createAssignment(req, res) {
         AND ta.class_id = $2
         AND ta.teacher_id <> $3
         AND ta.academic_year = $4
-    `, [subject_id, class_id, teacher_id, academic_year]);
+    `, [subject_id, class_id, teacher_id, yearToUse]);
 
     const result = await pool.query(
       `INSERT INTO teaching_assignments (teacher_id, subject_id, class_id, academic_year, term)
        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [teacher_id, subject_id, class_id, academic_year, term]
+      [teacher_id, subject_id, class_id, yearToUse, normTerm]
     );
     await req.audit('CREATE', 'teaching_assignments', result.rows[0].assignment_id, null, result.rows[0]);
     if (overlap.rows.length > 0) {
       const existing = overlap.rows.map(r => r.teacher_name).join(', ');
       return res.status(201).json({
         ...result.rows[0],
-        warning: `Notice: ${subjectRes.rows[0].subject_name} already has assignment(s) in ${classRes.rows[0].class_name} for ${academic_year} by ${existing}. New assignment was still created.`,
+        warning: `Notice: ${subjectRes.rows[0].subject_name} already has assignment(s) in ${classRes.rows[0].class_name} for ${yearToUse} by ${existing}. New assignment was still created.`,
       });
     }
     res.status(201).json(result.rows[0]);
@@ -1299,14 +1404,16 @@ async function updateAssignment(req, res) {
   try {
     const { id } = req.params;
     const { academic_year, term } = req.body;
-    if (!academic_year || !term) {
-      return res.status(400).json({ error: 'academic_year and term are required' });
+    const normTerm = normalizeTerm(term);
+    if (!normTerm) {
+      return res.status(400).json({ error: 'term must be one of: Term 1, Term 2, Term 3' });
     }
+    const yearToUse = String(academic_year || '').trim() || await getCurrentAcademicYearSetting();
     const old = await pool.query('SELECT * FROM teaching_assignments WHERE assignment_id = $1', [id]);
     if (old.rows.length === 0) return res.status(404).json({ error: 'Assignment not found' });
     const result = await pool.query(
       'UPDATE teaching_assignments SET academic_year = COALESCE($1, academic_year), term = COALESCE($2, term) WHERE assignment_id = $3 RETURNING *',
-      [academic_year, term, id]
+      [yearToUse, normTerm, id]
     );
     await req.audit('UPDATE', 'teaching_assignments', parseInt(id), old.rows[0], result.rows[0]);
     res.json(result.rows[0]);
@@ -2181,6 +2288,7 @@ async function getParentUsers(req, res) {
 
 module.exports = {
   getDashboard, getGradeEditStatus, setGradeEditStatus, getAdminRecoveryEmail, setAdminRecoveryEmail,
+  getAcademicYearSettings, setAcademicYearSettings,
   getStudents, createStudent, updateStudent, deleteStudent, promoteStudent, reclassifyStudent,
   getTeachers, createTeacher, updateTeacher, deleteTeacher,
   getParents, createParent, updateParent, deleteParent,

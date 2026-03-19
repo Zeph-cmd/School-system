@@ -13,6 +13,8 @@ router.get('/grade-edit-status', admin.getGradeEditStatus);
 router.put('/grade-edit-status', admin.setGradeEditStatus);
 router.get('/recovery-email', admin.getAdminRecoveryEmail);
 router.put('/recovery-email', admin.setAdminRecoveryEmail);
+router.get('/academic-year-settings', admin.getAcademicYearSettings);
+router.put('/academic-year-settings', admin.setAcademicYearSettings);
 
 // Students CRUD
 router.get('/students', admin.getStudents);
