@@ -238,6 +238,17 @@
           </div>
         </div>
         <div id="recordResult"></div>
+
+        <h1 style="margin-top:1.2rem;">Teacher Record</h1>
+        <div class="record-search">
+          <div class="record-search form-row-3">
+            <div class="form-group"><label>EMP Number</label><input type="text" id="recTeacherEmp" placeholder="e.g. EMP000123"></div>
+            <div class="form-group"><label>First Name</label><input type="text" id="recTeacherFirstName" placeholder="e.g. Jane"></div>
+            <div class="form-group"><label>Last Name</label><input type="text" id="recTeacherLastName" placeholder="e.g. Doe"></div>
+            <button class="btn btn-primary" onclick="loadTeacherRecord()">Search</button>
+          </div>
+        </div>
+        <div id="teacherRecordResult"></div>
       </div>
 
       <!-- Messages Section -->
@@ -290,7 +301,7 @@
         </div>
         <div class="table-container">
           <table><thead><tr>
-            <th>ID</th><th>User</th><th>Action</th><th>Table</th><th>Record</th><th>Time</th><th>Details</th>
+            <th>ID</th><th>User</th><th>Admin Tag</th><th>Action</th><th>Table</th><th>Record</th><th>Time</th><th>Details</th>
           </tr></thead><tbody id="auditLogsTable"></tbody></table>
         </div>
       </div>
@@ -336,6 +347,7 @@
 
     // Shared cache used by update modals and table reloads.
     const dataCache = {};
+    let auditLogCache = [];
 
     // ── Navigation ──────────────────────────────────
     document.querySelectorAll('.sidebar nav a').forEach(link => {
@@ -1383,6 +1395,64 @@
     }
 
     // ── Audit Logs ──────────────────────────────────
+    function parseAuditJson(value) {
+      if (!value) return null;
+      if (typeof value === 'object') return value;
+      try {
+        return JSON.parse(value);
+      } catch {
+        return null;
+      }
+    }
+
+    function getAdminTag(logEntry) {
+      const newData = parseAuditJson(logEntry.new_data);
+      const meta = newData && newData._meta && newData._meta.admin_access
+        ? newData._meta.admin_access
+        : null;
+      if (meta && meta.tag) return meta.tag;
+      if (meta && meta.access_number) return `Admin ${meta.access_number}`;
+      return '-';
+    }
+
+    function openAuditLogDetails(idx) {
+      const log = auditLogCache[idx];
+      if (!log) return;
+
+      const newData = parseAuditJson(log.new_data);
+      const oldData = parseAuditJson(log.old_data);
+      const meta = newData && newData._meta && newData._meta.admin_access
+        ? newData._meta.admin_access
+        : null;
+
+      const detailObj = {
+        id: log.audit_id || '-',
+        user: log.username || 'System',
+        admin_tag: getAdminTag(log),
+        action: log.action || '-',
+        table: log.table_name || '-',
+        record_id: log.record_id || '-',
+        ip_address: log.ip_address || '-',
+        admin_access_meta: meta || null,
+        old_data: oldData,
+        new_data: newData,
+        created_at: log.created_at || null,
+      };
+
+      document.getElementById('modalTitle').textContent = 'Audit Log Details';
+      const form = document.getElementById('modalForm');
+      form.innerHTML = `
+        <div class="form-group">
+          <label>Details</label>
+          <textarea rows="16" readonly>${escHtml(JSON.stringify(detailObj, null, 2))}</textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" onclick="closeModal()">Close</button>
+        </div>
+      `;
+      document.getElementById('modalOverlay').classList.add('show');
+    }
+
     async function loadAuditLogs() {
       const action = document.getElementById('auditAction')?.value || '';
       const tableName = document.getElementById('auditTable')?.value || '';
@@ -1391,15 +1461,21 @@
       if (tableName) url += `table_name=${encodeURIComponent(tableName)}&`;
       const data = await api(url);
       if (!data) return;
-      document.getElementById('auditLogsTable').innerHTML = data.map(l => {
+      auditLogCache = Array.isArray(data) ? data : [];
+      document.getElementById('auditLogsTable').innerHTML = auditLogCache.map((l, idx) => {
         const time = l.created_at ? new Date(l.created_at).toLocaleString() : '';
-        const details = l.new_values ? JSON.stringify(l.new_values).substring(0, 80) : '';
+        const newData = parseAuditJson(l.new_data);
+        const preview = newData ? JSON.stringify(newData).substring(0, 80) : '';
+        const tag = getAdminTag(l);
         return `<tr>
-          <td>${l.log_id}</td><td>${escHtml(l.username || 'System')}</td><td>${l.action}</td>
+          <td>${l.audit_id || '-'}</td><td>${escHtml(l.username || 'System')}</td><td>${escHtml(tag)}</td><td>${l.action}</td>
           <td>${l.table_name}</td><td>${l.record_id || '-'}</td><td>${time}</td>
-          <td style="font-size:0.8rem; max-width:200px; overflow:hidden; text-overflow:ellipsis">${escHtml(details)}</td>
+          <td style="font-size:0.8rem; max-width:220px; overflow:hidden; text-overflow:ellipsis">
+            ${escHtml(preview) || '-'}
+            <button class="btn btn-sm" style="margin-left:0.4rem;" onclick="openAuditLogDetails(${idx})">View</button>
+          </td>
         </tr>`;
-      }).join('') || '<tr><td colspan="7">No logs found.</td></tr>';
+      }).join('') || '<tr><td colspan="8">No logs found.</td></tr>';
     }
 
     // ── Notification Badge ──────────────────────────
@@ -1493,6 +1569,83 @@
 
     function toggleParentDetail(idx) {
       const el = document.getElementById('parentDetail' + idx);
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    // ── Teacher Record Lookup ───────────────────────
+    async function loadTeacherRecord() {
+      const employeeNumber = document.getElementById('recTeacherEmp').value.trim();
+      const firstName = document.getElementById('recTeacherFirstName').value.trim();
+      const lastName = document.getElementById('recTeacherLastName').value.trim();
+
+      if (!employeeNumber && !firstName && !lastName) {
+        showAlert('Please enter EMP number, first name, or last name', 'error');
+        return;
+      }
+
+      let url = `${API}/teacher-record?`;
+      if (employeeNumber) url += `employee_number=${encodeURIComponent(employeeNumber)}&`;
+      if (firstName) url += `first_name=${encodeURIComponent(firstName)}&`;
+      if (lastName) url += `last_name=${encodeURIComponent(lastName)}&`;
+
+      const data = await api(url);
+      if (!data || data.error) {
+        document.getElementById('teacherRecordResult').innerHTML = `<div class="alert alert-error">${escHtml(data?.error || 'Teacher not found')}</div>`;
+        return;
+      }
+
+      const t = data.teacher || {};
+      const account = data.account || null;
+      const assignments = Array.isArray(data.assignments) ? data.assignments : [];
+      const assignmentRows = assignments.length
+        ? assignments.map(a => `
+            <tr>
+              <td>${a.assignment_id}</td>
+              <td>${escHtml(a.subject_name || 'N/A')}</td>
+              <td>${escHtml(a.class_name || 'N/A')}</td>
+              <td>${escHtml(a.academic_year || 'N/A')}</td>
+              <td>${escHtml(a.term || 'N/A')}</td>
+            </tr>
+          `).join('')
+        : '<tr><td colspan="5">No teaching assignments found.</td></tr>';
+
+      document.getElementById('teacherRecordResult').innerHTML = `
+        <div class="record-card">
+          <h3>
+            Teacher: ${escHtml(t.first_name || '')} ${escHtml(t.last_name || '')}
+            <span class="parent-link" style="margin-left:0.5rem;" onclick="toggleTeacherDetail()">(click for details)</span>
+          </h3>
+          <div class="record-field"><span class="label">Teacher ID:</span> ${t.teacher_id || '-'}</div>
+          <div class="record-field"><span class="label">EMP Number:</span> ${escHtml(t.employee_number || 'N/A')}</div>
+          <div class="record-field"><span class="label">Status:</span> ${statusBadge(t.status || 'active')}</div>
+          <div class="parent-detail" id="teacherDetailBox" style="display:none; margin-top:0.8rem;">
+            <div class="record-field"><span class="label">Full Name:</span> ${escHtml(t.first_name || '')} ${escHtml(t.other_name || '')} ${escHtml(t.last_name || '')}</div>
+            <div class="record-field"><span class="label">Gender:</span> ${escHtml(t.gender || 'N/A')}</div>
+            <div class="record-field"><span class="label">Phone:</span> ${escHtml(t.phone || 'N/A')}</div>
+            <div class="record-field"><span class="label">Email:</span> ${escHtml(t.email || 'N/A')}</div>
+            <div class="record-field"><span class="label">Hire Date:</span> ${t.hire_date ? new Date(t.hire_date).toLocaleDateString() : 'N/A'}</div>
+            <div class="record-field"><span class="label">Created:</span> ${t.created_at ? new Date(t.created_at).toLocaleString() : 'N/A'}</div>
+            <div class="record-field"><span class="label">Account Username:</span> ${escHtml(account?.username || 'N/A')}</div>
+            <div class="record-field"><span class="label">Account Email:</span> ${escHtml(account?.email || t.email || 'N/A')}</div>
+            <div class="record-field"><span class="label">Account Phone:</span> ${escHtml(account?.phone || t.phone || 'N/A')}</div>
+            <div class="record-field"><span class="label">Account Status:</span> ${statusBadge(account?.status || t.status || 'active')}</div>
+          </div>
+        </div>
+        <div class="record-card">
+          <h3>Teaching Assignments</h3>
+          <div class="table-container">
+            <table>
+              <thead><tr><th>ID</th><th>Subject</th><th>Class</th><th>Year</th><th>Term</th></tr></thead>
+              <tbody>${assignmentRows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function toggleTeacherDetail() {
+      const el = document.getElementById('teacherDetailBox');
+      if (!el) return;
       el.style.display = el.style.display === 'none' ? 'block' : 'none';
     }
 

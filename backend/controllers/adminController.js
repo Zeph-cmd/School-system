@@ -2085,6 +2085,73 @@ async function getStudentRecord(req, res) {
   }
 }
 
+async function getTeacherRecord(req, res) {
+  try {
+    const { employee_number, first_name, last_name } = req.query;
+    if (!employee_number && !first_name && !last_name) {
+      return res.status(400).json({ error: 'Please provide EMP number, first name, or last name' });
+    }
+
+    let teacherQuery = 'SELECT * FROM teachers WHERE 1=1';
+    const params = [];
+    if (employee_number) {
+      params.push(String(employee_number).trim());
+      teacherQuery += ` AND LOWER(employee_number) = LOWER($${params.length})`;
+    }
+    if (first_name) {
+      params.push(String(first_name).trim());
+      teacherQuery += ` AND LOWER(first_name) = LOWER($${params.length})`;
+    }
+    if (last_name) {
+      params.push(String(last_name).trim());
+      teacherQuery += ` AND LOWER(last_name) = LOWER($${params.length})`;
+    }
+    teacherQuery += ' ORDER BY teacher_id DESC LIMIT 1';
+
+    const teacherRes = await pool.query(teacherQuery, params);
+    if (teacherRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Teacher not found' });
+    }
+
+    const teacher = teacherRes.rows[0];
+
+    const assignmentRes = await pool.query(
+      `SELECT ta.assignment_id, ta.academic_year, ta.term,
+              c.class_id, c.class_name,
+              s.subject_id, s.subject_name
+       FROM teaching_assignments ta
+       JOIN classes c ON ta.class_id = c.class_id
+       JOIN subjects s ON ta.subject_id = s.subject_id
+       WHERE ta.teacher_id = $1
+       ORDER BY ta.academic_year DESC, ta.term, ta.assignment_id DESC`,
+      [teacher.teacher_id]
+    );
+
+    let account = null;
+    if (teacher.email) {
+      const accountRes = await pool.query(
+        `SELECT u.user_id, u.username, u.email, u.phone, u.status
+         FROM users u
+         JOIN user_roles ur ON u.user_id = ur.user_id
+         JOIN roles r ON ur.role_id = r.role_id
+         WHERE r.role_name = 'teacher' AND LOWER(u.email) = LOWER($1)
+         LIMIT 1`,
+        [teacher.email]
+      );
+      account = accountRes.rows[0] || null;
+    }
+
+    res.json({
+      teacher,
+      account,
+      assignments: assignmentRes.rows,
+    });
+  } catch (err) {
+    console.error('Teacher record lookup error:', err);
+    res.status(500).json({ error: 'Failed to fetch teacher record' });
+  }
+}
+
 // ─── MESSAGING ──────────────────────────────────────────────────
 async function sendBroadcast(req, res) {
   try {
@@ -2305,5 +2372,6 @@ module.exports = {
   getPendingGradeChanges, approveGradeChange, rejectGradeChange,
   getNotifications,
   getStudentRecord,
+  getTeacherRecord,
   sendBroadcast, sendPrivateMessage, getAdminMessages, getConversation, replyMessage, getParentUsers,
 };

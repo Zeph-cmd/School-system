@@ -97,6 +97,7 @@ router.get('/notifications', admin.getNotifications);
 
 // Student Record Lookup
 router.get('/student-record', admin.getStudentRecord);
+router.get('/teacher-record', admin.getTeacherRecord);
 
 // Messaging
 router.get('/messages', admin.getAdminMessages);

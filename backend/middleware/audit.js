@@ -36,6 +36,7 @@ function auditMiddleware(req, res, next) {
       ? {
           admin_access: {
             access_number: req.adminAccessNumber,
+            tag: `Admin ${req.adminAccessNumber}`,
             route: req.originalUrl || req.path,
             method: req.method,
           },
