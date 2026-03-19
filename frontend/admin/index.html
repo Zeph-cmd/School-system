@@ -1415,6 +1415,12 @@
       return '-';
     }
 
+    function adminTagBadge(tag) {
+      const val = String(tag || '-');
+      if (val === '-') return '<span class="badge badge-inactive">-</span>';
+      return `<span class="badge badge-active">${escHtml(val)}</span>`;
+    }
+
     function openAuditLogDetails(idx) {
       const log = auditLogCache[idx];
       if (!log) return;
@@ -1464,15 +1470,12 @@
       auditLogCache = Array.isArray(data) ? data : [];
       document.getElementById('auditLogsTable').innerHTML = auditLogCache.map((l, idx) => {
         const time = l.created_at ? new Date(l.created_at).toLocaleString() : '';
-        const newData = parseAuditJson(l.new_data);
-        const preview = newData ? JSON.stringify(newData).substring(0, 80) : '';
         const tag = getAdminTag(l);
         return `<tr>
-          <td>${l.audit_id || '-'}</td><td>${escHtml(l.username || 'System')}</td><td>${escHtml(tag)}</td><td>${l.action}</td>
+          <td>${l.audit_id || '-'}</td><td>${escHtml(l.username || 'System')}</td><td>${adminTagBadge(tag)}</td><td>${l.action}</td>
           <td>${l.table_name}</td><td>${l.record_id || '-'}</td><td>${time}</td>
-          <td style="font-size:0.8rem; max-width:220px; overflow:hidden; text-overflow:ellipsis">
-            ${escHtml(preview) || '-'}
-            <button class="btn btn-sm" style="margin-left:0.4rem;" onclick="openAuditLogDetails(${idx})">View</button>
+          <td style="font-size:0.8rem; max-width:220px;">
+            <button class="btn btn-sm" onclick="openAuditLogDetails(${idx})">View Details</button>
           </td>
         </tr>`;
       }).join('') || '<tr><td colspan="8">No logs found.</td></tr>';

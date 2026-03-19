@@ -157,6 +157,7 @@
       <!-- Messages -->
       <div id="sec-messages" class="section">
         <h1>Messages</h1>
+        <div id="parentMsgRestriction" class="alert" style="display:none; margin-bottom:0.8rem;"></div>
         <div class="msg-tabs">
           <button class="msg-tab active" onclick="switchParentMsgTab('broadcasts')">Class Broadcasts</button>
           <button class="msg-tab" onclick="switchParentMsgTab('private')">Private Messages</button>
@@ -173,6 +174,7 @@
       <!-- Contact -->
       <div id="sec-contact" class="section">
         <h1>Contact School</h1>
+        <div id="parentContactRestriction" class="alert" style="display:none; margin-bottom:0.8rem;"></div>
         <div class="record-card">
           <h3>Contact Admin</h3>
           <div class="form-group">
@@ -183,7 +185,7 @@
             <label>Message</label>
             <textarea id="contactAdminBody" rows="4" placeholder="Type your message to admin..."></textarea>
           </div>
-          <button class="btn btn-primary" onclick="sendAdminEmail()">Contact Admin</button>
+          <button id="contactAdminBtn" class="btn btn-primary" onclick="sendAdminEmail()">Contact Admin</button>
         </div>
 
         <div class="record-card">
@@ -202,7 +204,7 @@
             <label>Message</label>
             <textarea id="contactTeacherBody" rows="4" placeholder="Type your message to the teacher..."></textarea>
           </div>
-          <button class="btn btn-primary" onclick="sendTeacherEmail()">Contact Teacher</button>
+          <button id="contactTeacherBtn" class="btn btn-primary" onclick="sendTeacherEmail()">Contact Teacher</button>
         </div>
       </div>
     </main>
@@ -290,6 +292,7 @@
 
     let myChildren = [];
     let currentParentProfile = null;
+    let parentMessagingStatus = { can_message: true, reason: null };
 
     function defaultAcademicYear() {
       const y = new Date().getFullYear();
@@ -447,6 +450,41 @@
       buildAcademicYearSelects(myChildren);
     }
 
+    function applyParentMessagingUi() {
+      const blocked = !parentMessagingStatus?.can_message;
+      const reason = parentMessagingStatus?.reason || 'Messaging is disabled for this account.';
+
+      const msgBox = document.getElementById('parentMsgRestriction');
+      const contactBox = document.getElementById('parentContactRestriction');
+      if (msgBox) {
+        msgBox.style.display = blocked ? 'block' : 'none';
+        msgBox.textContent = blocked ? reason : '';
+      }
+      if (contactBox) {
+        contactBox.style.display = blocked ? 'block' : 'none';
+        contactBox.textContent = blocked ? reason : '';
+      }
+
+      ['contactAdminSubject', 'contactAdminBody', 'contactTeacherSelect', 'contactTeacherSubject', 'contactTeacherBody'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = blocked;
+      });
+      ['contactAdminBtn', 'contactTeacherBtn'].forEach((id) => {
+        const btn = document.getElementById(id);
+        if (btn) btn.disabled = blocked;
+      });
+    }
+
+    async function loadParentMessagingStatus() {
+      const data = await api(`${API}/messaging-status`);
+      if (!data || data.error) {
+        parentMessagingStatus = { can_message: false, reason: data?.error || 'Unable to determine messaging permissions.' };
+      } else {
+        parentMessagingStatus = data;
+      }
+      applyParentMessagingUi();
+    }
+
     async function loadGrades() {
       const studentId = document.getElementById('gradeChildSelect').value;
       const year = document.getElementById('gradeYearSelect')?.value || '';
@@ -507,6 +545,7 @@
     // Initial load
     loadCurrentParentProfile();
     loadChildren();
+    loadParentMessagingStatus();
 
     function escHtml(str) {
       const d = document.createElement('div');
@@ -602,15 +641,21 @@
         <div class="conversation-view">
           <h3><button class="back-btn" onclick="backToParentInbox()">&#8592;</button> ${firstMsg.subject ? escHtml(firstMsg.subject) : 'Conversation'}</h3>
           <div class="msg-thread">${thread}</div>
-          <div class="reply-box">
-            <textarea id="parentReplyBody" placeholder="Type reply..." rows="2"></textarea>
-            <button class="btn btn-primary" onclick="sendParentReply(${firstMsg.message_id})">Reply</button>
-          </div>
+          ${parentMessagingStatus?.can_message ? `
+            <div class="reply-box">
+              <textarea id="parentReplyBody" placeholder="Type reply..." rows="2"></textarea>
+              <button class="btn btn-primary" onclick="sendParentReply(${firstMsg.message_id})">Reply</button>
+            </div>
+          ` : `<div class="alert alert-error">${escHtml(parentMessagingStatus?.reason || 'Reply is disabled for this account.')}</div>`}
         </div>
       `;
     }
 
     async function sendParentReply(msgId) {
+      if (!parentMessagingStatus?.can_message) {
+        showAlert(parentMessagingStatus?.reason || 'Reply is disabled for this account.', 'error');
+        return;
+      }
       const body = document.getElementById('parentReplyBody').value.trim();
       if (!body) return;
       const res = await api(`${API}/messages/${msgId}/reply`, 'POST', { body });
@@ -640,6 +685,10 @@
     }
 
     async function sendAdminEmail() {
+      if (!parentMessagingStatus?.can_message) {
+        showAlert(parentMessagingStatus?.reason || 'Messaging is disabled for this account.', 'error');
+        return;
+      }
       const subject = document.getElementById('contactAdminSubject').value.trim();
       const body = document.getElementById('contactAdminBody').value.trim();
       if (!subject || !body) {
@@ -657,6 +706,10 @@
     }
 
     async function sendTeacherEmail() {
+      if (!parentMessagingStatus?.can_message) {
+        showAlert(parentMessagingStatus?.reason || 'Messaging is disabled for this account.', 'error');
+        return;
+      }
       const teacher_id = document.getElementById('contactTeacherSelect').value;
       const subject = document.getElementById('contactTeacherSubject').value.trim();
       const body = document.getElementById('contactTeacherBody').value.trim();

@@ -539,7 +539,20 @@ async function deleteStudent(req, res) {
     const old = await pool.query('SELECT * FROM students WHERE student_id = $1', [id]);
     if (old.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
 
-    await pool.query('DELETE FROM parent_student WHERE student_id = $1', [id]);
+    const linkedParentUsers = await pool.query(
+      `SELECT DISTINCT u.user_id
+       FROM parent_student ps
+       JOIN parents p ON p.parent_id = ps.parent_id
+       JOIN users u ON (
+         (u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email))
+         OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username)
+       )
+       JOIN user_roles ur ON ur.user_id = u.user_id
+       JOIN roles r ON r.role_id = ur.role_id
+       WHERE ps.student_id = $1 AND r.role_name = 'parent'`,
+      [id]
+    );
+
     const closed = await pool.query(
       "UPDATE enrollments SET status = 'left' WHERE student_id = $1 AND status = 'active' RETURNING enrollment_id",
       [id]
@@ -547,11 +560,39 @@ async function deleteStudent(req, res) {
 
     // Soft delete
     await pool.query("UPDATE students SET status = 'suspended' WHERE student_id = $1", [id]);
+
+    let suspendedParentAccounts = 0;
+    for (const row of linkedParentUsers.rows) {
+      const uid = row.user_id;
+      const visibleChildren = await pool.query(
+        `SELECT COUNT(DISTINCT s.student_id) AS cnt
+         FROM parent_student ps
+         JOIN parents p ON p.parent_id = ps.parent_id
+         JOIN students s ON s.student_id = ps.student_id
+         JOIN users u ON (
+           (u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email))
+           OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username)
+         )
+         WHERE u.user_id = $1
+           AND COALESCE(LOWER(s.status), 'active') <> 'suspended'`,
+        [uid]
+      );
+
+      if (parseInt(visibleChildren.rows[0]?.cnt || '0', 10) === 0) {
+        const updated = await pool.query(
+          "UPDATE users SET status = 'suspended' WHERE user_id = $1 AND status = 'approved' RETURNING user_id",
+          [uid]
+        );
+        suspendedParentAccounts += updated.rowCount;
+      }
+    }
+
     await req.audit('DELETE', 'students', parseInt(id), old.rows[0], {
       status: 'suspended',
       closed_enrollments: closed.rowCount,
+      suspended_parent_accounts: suspendedParentAccounts,
     });
-    res.json({ message: `Student deactivated. ${closed.rowCount} active enrollment(s) closed automatically.` });
+    res.json({ message: `Student deactivated. ${closed.rowCount} active enrollment(s) closed automatically. ${suspendedParentAccounts} linked parent account(s) suspended.` });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete student' });
   }
@@ -858,8 +899,27 @@ async function deleteTeacher(req, res) {
     if (old.rows.length === 0) return res.status(404).json({ error: 'Teacher not found' });
     // Soft delete
     await pool.query("UPDATE teachers SET status = 'resigned' WHERE teacher_id = $1", [id]);
+    const suspendedTeacherUser = await pool.query(
+      `UPDATE users
+       SET status = 'suspended'
+       WHERE user_id IN (
+         SELECT u.user_id
+         FROM users u
+         JOIN user_roles ur ON ur.user_id = u.user_id
+         JOIN roles r ON r.role_id = ur.role_id
+         WHERE r.role_name = 'teacher'
+           AND (
+             (u.email IS NOT NULL AND $1 IS NOT NULL AND LOWER(u.email) = LOWER($1))
+             OR LOWER(u.username) = LOWER(COALESCE($2, ''))
+             OR LOWER(u.username) = LOWER(COALESCE($3, ''))
+           )
+       )
+       AND status = 'approved'
+       RETURNING user_id`,
+      [old.rows[0].email || null, old.rows[0].employee_number || null, old.rows[0].first_name || null]
+    );
     await req.audit('DELETE', 'teachers', parseInt(id), old.rows[0], { status: 'resigned' });
-    res.json({ message: 'Teacher deactivated' });
+    res.json({ message: `Teacher deactivated. ${suspendedTeacherUser.rowCount} linked user account(s) suspended.` });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete teacher' });
   }
@@ -940,14 +1000,34 @@ async function deleteParent(req, res) {
     const old = await pool.query('SELECT * FROM parents WHERE parent_id = $1', [id]);
     if (old.rows.length === 0) return res.status(404).json({ error: 'Parent not found' });
 
+    const suspendedParentUsers = await pool.query(
+      `UPDATE users
+       SET status = 'suspended'
+       WHERE user_id IN (
+         SELECT u.user_id
+         FROM users u
+         JOIN user_roles ur ON ur.user_id = u.user_id
+         JOIN roles r ON r.role_id = ur.role_id
+         WHERE r.role_name = 'parent'
+           AND (
+             (u.email IS NOT NULL AND $1 IS NOT NULL AND LOWER(u.email) = LOWER($1))
+             OR LOWER(SPLIT_PART(COALESCE($1, ''), '@', 1)) = LOWER(u.username)
+           )
+       )
+       AND status = 'approved'
+       RETURNING user_id`,
+      [old.rows[0].email || null]
+    );
+
     const unlinked = await pool.query('DELETE FROM parent_student WHERE parent_id = $1 RETURNING parent_student_id', [id]);
     await pool.query('DELETE FROM parents WHERE parent_id = $1', [id]);
 
     await req.audit('DELETE', 'parents', parseInt(id), old.rows[0], {
       deleted: true,
       removed_links: unlinked.rowCount,
+      suspended_user_accounts: suspendedParentUsers.rowCount,
     });
-    res.json({ message: `Parent deleted. ${unlinked.rowCount} parent-student link(s) removed automatically.` });
+    res.json({ message: `Parent deleted. ${unlinked.rowCount} parent-student link(s) removed automatically. ${suspendedParentUsers.rowCount} linked user account(s) suspended.` });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete parent' });
   }

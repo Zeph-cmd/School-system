@@ -8,6 +8,7 @@ const parent = require('../controllers/parentController');
 router.use(authenticate, authorize('parent'));
 
 router.get('/children', parent.getMyChildren);
+router.get('/messaging-status', parent.getMessagingStatus);
 router.get('/fees', parent.getChildFees);
 router.get('/results', parent.getChildResults);
 router.get('/grades', parent.getChildGrades);

@@ -133,6 +133,42 @@ async function getAllowedParentUsers(userId) {
   return result.rows;
 }
 
+async function getTeacherMessagingState(userId) {
+  const result = await pool.query(
+    `SELECT t.teacher_id, t.status
+     FROM teachers t
+     JOIN users u ON (
+       (u.email IS NOT NULL AND t.email IS NOT NULL AND LOWER(t.email) = LOWER(u.email))
+       OR LOWER(SPLIT_PART(COALESCE(t.email, ''), '@', 1)) = LOWER(u.username)
+       OR LOWER(COALESCE(t.employee_number, '')) = LOWER(u.username)
+       OR LOWER(COALESCE(t.first_name, '')) = LOWER(u.username)
+     )
+     WHERE u.user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+
+  if (result.rows.length === 0) {
+    return { can_message: false, reason: 'Teacher profile not found.' };
+  }
+
+  const status = String(result.rows[0].status || 'active').toLowerCase();
+  if (status !== 'active') {
+    return { can_message: false, reason: 'Messaging is disabled for deactivated teacher accounts.' };
+  }
+
+  return { can_message: true, reason: null };
+}
+
+async function requireTeacherMessagingAllowed(userId, res) {
+  const state = await getTeacherMessagingState(userId);
+  if (!state.can_message) {
+    res.status(403).json({ error: state.reason, can_message: false });
+    return null;
+  }
+  return state;
+}
+
 async function isGradeEditEnabled() {
   await ensureSystemSettingsTable();
   const result = await pool.query(
@@ -695,6 +731,9 @@ async function restoreDeletedHomework(req, res) {
 
 async function getMessageParents(req, res) {
   try {
+    const state = await getTeacherMessagingState(req.user.user_id);
+    if (!state.can_message) return res.json([]);
+
     const parents = await getAllowedParentUsers(req.user.user_id);
     res.json(parents);
   } catch (err) {
@@ -731,6 +770,9 @@ async function getMyMessages(req, res) {
 
 async function sendParentMessage(req, res) {
   try {
+    const allowed = await requireTeacherMessagingAllowed(req.user.user_id, res);
+    if (!allowed) return;
+
     await ensureMessagesTable();
     const recipientId = parseInt(req.body.recipient_id, 10);
     const subject = String(req.body.subject || '').trim();
@@ -800,6 +842,9 @@ async function getMessageConversation(req, res) {
 
 async function replyMessage(req, res) {
   try {
+    const allowed = await requireTeacherMessagingAllowed(req.user.user_id, res);
+    if (!allowed) return;
+
     await ensureMessagesTable();
     const messageId = parseInt(req.params.id, 10);
     const body = String(req.body.body || '').trim();

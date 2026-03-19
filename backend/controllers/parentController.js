@@ -14,6 +14,80 @@ function parseAcademicYearRange(value) {
   return raw;
 }
 
+async function getParentMessagingState(userId) {
+  const parentRes = await pool.query(
+    `SELECT p.parent_id, p.status
+     FROM parents p
+     JOIN users u ON (
+       (u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email))
+       OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username)
+     )
+     WHERE u.user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+
+  if (parentRes.rows.length === 0) {
+    return {
+      can_message: false,
+      reason: 'Parent profile not found. Contact admin.',
+      active_children: 0,
+    };
+  }
+
+  const parent = parentRes.rows[0];
+  if (String(parent.status || 'active').toLowerCase() !== 'active') {
+    return {
+      can_message: false,
+      reason: 'Parent account is not active for messaging.',
+      active_children: 0,
+    };
+  }
+
+  const activeChildrenRes = await pool.query(
+    `SELECT COUNT(DISTINCT s.student_id) AS cnt
+     FROM parent_student ps
+     JOIN students s ON s.student_id = ps.student_id
+     JOIN enrollments e ON e.student_id = s.student_id AND e.status = 'active'
+     WHERE ps.parent_id = $1
+       AND COALESCE(LOWER(s.status), 'active') <> 'suspended'`,
+    [parent.parent_id]
+  );
+  const activeChildren = parseInt(activeChildrenRes.rows[0]?.cnt || '0', 10);
+
+  if (activeChildren <= 0) {
+    return {
+      can_message: false,
+      reason: 'Messaging is disabled because your child has completed/left school or is suspended.',
+      active_children: 0,
+    };
+  }
+
+  return {
+    can_message: true,
+    reason: null,
+    active_children: activeChildren,
+  };
+}
+
+async function requireParentMessagingAllowed(userId, res) {
+  const state = await getParentMessagingState(userId);
+  if (!state.can_message) {
+    res.status(403).json({ error: state.reason, can_message: false, active_children: state.active_children });
+    return null;
+  }
+  return state;
+}
+
+async function getMessagingStatus(req, res) {
+  try {
+    const state = await getParentMessagingState(req.user.user_id);
+    res.json(state);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch messaging status' });
+  }
+}
+
 // GET /api/parent/children - get linked students
 async function getMyChildren(req, res) {
   try {
@@ -41,6 +115,7 @@ async function getMyChildren(req, res) {
         LIMIT 1
       ) ce ON TRUE
       WHERE u.user_id = $1
+        AND COALESCE(LOWER(s.status), 'active') <> 'suspended'
       ORDER BY LOWER(TRIM(COALESCE(s.admission_number, ''))),
                CASE WHEN ce.enrollment_status = 'active' THEN 0 ELSE 1 END,
                s.student_id DESC
@@ -64,8 +139,10 @@ async function getChildFees(req, res) {
     const check = await pool.query(`
       SELECT 1 FROM parent_student ps
       JOIN parents p ON ps.parent_id = p.parent_id
+      JOIN students s ON ps.student_id = s.student_id
       JOIN users u ON ((u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email)) OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username))
       WHERE u.user_id = $1 AND ps.student_id = $2
+        AND COALESCE(LOWER(s.status), 'active') <> 'suspended'
     `, [req.user.user_id, student_id]);
 
     if (check.rows.length === 0) {
@@ -99,8 +176,10 @@ async function getChildResults(req, res) {
     const check = await pool.query(`
       SELECT 1 FROM parent_student ps
       JOIN parents p ON ps.parent_id = p.parent_id
+      JOIN students s ON ps.student_id = s.student_id
       JOIN users u ON ((u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email)) OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username))
       WHERE u.user_id = $1 AND ps.student_id = $2
+        AND COALESCE(LOWER(s.status), 'active') <> 'suspended'
     `, [req.user.user_id, student_id]);
 
     if (check.rows.length === 0) {
@@ -134,8 +213,10 @@ async function getChildGrades(req, res) {
     const check = await pool.query(`
       SELECT 1 FROM parent_student ps
       JOIN parents p ON ps.parent_id = p.parent_id
+      JOIN students s ON ps.student_id = s.student_id
       JOIN users u ON ((u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email)) OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username))
       WHERE u.user_id = $1 AND ps.student_id = $2
+        AND COALESCE(LOWER(s.status), 'active') <> 'suspended'
     `, [req.user.user_id, student_id]);
 
     if (check.rows.length === 0) {
@@ -170,8 +251,10 @@ async function getChildAttendance(req, res) {
     const check = await pool.query(`
       SELECT 1 FROM parent_student ps
       JOIN parents p ON ps.parent_id = p.parent_id
+      JOIN students s ON ps.student_id = s.student_id
       JOIN users u ON ((u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email)) OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username))
       WHERE u.user_id = $1 AND ps.student_id = $2
+        AND COALESCE(LOWER(s.status), 'active') <> 'suspended'
     `, [req.user.user_id, student_id]);
 
     if (check.rows.length === 0) {
@@ -205,8 +288,10 @@ async function getChildHomework(req, res) {
     const check = await pool.query(`
       SELECT 1 FROM parent_student ps
       JOIN parents p ON ps.parent_id = p.parent_id
+      JOIN students s ON ps.student_id = s.student_id
       JOIN users u ON ((u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email)) OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username))
       WHERE u.user_id = $1 AND ps.student_id = $2
+        AND COALESCE(LOWER(s.status), 'active') <> 'suspended'
     `, [req.user.user_id, student_id]);
 
     if (check.rows.length === 0) {
@@ -317,6 +402,9 @@ async function getConversation(req, res) {
 // POST /api/parent/messages/:id/reply - reply to a private message
 async function replyToMessage(req, res) {
   try {
+    const allowed = await requireParentMessagingAllowed(req.user.user_id, res);
+    if (!allowed) return;
+
     const { id } = req.params;
     const { body } = req.body;
     if (!body) return res.status(400).json({ error: 'Message body required' });
@@ -379,6 +467,11 @@ async function getUnreadCount(req, res) {
 // GET /api/parent/contact-teachers - teachers for parent's children
 async function getContactTeachers(req, res) {
   try {
+    const state = await getParentMessagingState(req.user.user_id);
+    if (!state.can_message) {
+      return res.json([]);
+    }
+
     const result = await pool.query(`
       SELECT DISTINCT t.teacher_id,
         t.first_name || ' ' || t.last_name AS teacher_name,
@@ -411,6 +504,9 @@ async function getContactTeachers(req, res) {
 // POST /api/parent/contact-admin - parent sends email to admin
 async function contactAdmin(req, res) {
   try {
+    const allowed = await requireParentMessagingAllowed(req.user.user_id, res);
+    if (!allowed) return;
+
     const { subject, body } = req.body;
     if (!subject || !body) {
       return res.status(400).json({ error: 'subject and body are required' });
@@ -448,6 +544,9 @@ async function contactAdmin(req, res) {
 // POST /api/parent/contact-teacher - parent sends email to teacher
 async function contactTeacher(req, res) {
   try {
+    const allowed = await requireParentMessagingAllowed(req.user.user_id, res);
+    if (!allowed) return;
+
     const { teacher_id, subject, body } = req.body;
     if (!teacher_id || !subject || !body) {
       return res.status(400).json({ error: 'teacher_id, subject and body are required' });
@@ -501,6 +600,7 @@ async function contactTeacher(req, res) {
 
 module.exports = {
   getMyChildren, getChildFees, getChildResults, getChildGrades, getChildAttendance, getChildHomework,
+  getMessagingStatus,
   getMyMessages, getConversation, replyToMessage, getUnreadCount,
   getContactTeachers, contactAdmin, contactTeacher,
 };
