@@ -405,9 +405,30 @@
     async function loadChildren() {
       const data = await api(`${API}/children`);
       if (!data) return;
-      myChildren = data;
 
-      document.getElementById('childrenTable').innerHTML = data.map(c => `<tr>
+      // Defensive de-duplication by ADM number to avoid repeated child rows.
+      const byAdm = new Map();
+      (data || []).forEach((c) => {
+        const key = String(c.admission_number || '').trim().toLowerCase() || `student-${c.student_id}`;
+        if (!byAdm.has(key)) {
+          byAdm.set(key, c);
+          return;
+        }
+        const existing = byAdm.get(key);
+        const existingActive = String(existing.status || '').toLowerCase() === 'active';
+        const currentActive = String(c.status || '').toLowerCase() === 'active';
+        if (!existingActive && currentActive) {
+          byAdm.set(key, c);
+          return;
+        }
+        if (Number(c.student_id || 0) > Number(existing.student_id || 0)) {
+          byAdm.set(key, c);
+        }
+      });
+
+      myChildren = Array.from(byAdm.values());
+
+      document.getElementById('childrenTable').innerHTML = myChildren.map(c => `<tr>
         <td>${c.admission_number}</td><td>${c.first_name} ${c.last_name}</td>
         <td>${c.gender}</td><td>${c.date_of_birth?.split('T')[0] || ''}</td>
         <td>${c.current_class_name || '-'}</td><td>${c.current_academic_year || '-'}</td>
@@ -419,11 +440,11 @@
       </tr>`).join('') || '<tr><td colspan="11">No children linked. Contact school admin.</td></tr>';
 
       // Populate all child select dropdowns
-      const opts = data.map(c => `<option value="${c.student_id}">${c.first_name} ${c.last_name}</option>`).join('');
+      const opts = myChildren.map(c => `<option value="${c.student_id}">${c.first_name} ${c.last_name}</option>`).join('');
       ['gradeChildSelect', 'feeChildSelect', 'hwChildSelect'].forEach(id => {
         document.getElementById(id).innerHTML = '<option value="">Choose...</option>' + opts;
       });
-      buildAcademicYearSelects(data);
+      buildAcademicYearSelects(myChildren);
     }
 
     async function loadGrades() {
@@ -447,17 +468,11 @@
       const data = await api(`${API}/fees?student_id=${studentId}&academic_year=${encodeURIComponent(year)}`);
       if (!data) return;
 
-      const child = myChildren.find(c => String(c.student_id) === String(studentId));
-      const tuitionDue = parseFloat(child?.tuition_amount_due || 0);
-      const tuitionPaid = parseFloat(child?.tuition_amount_paid || 0);
-      const tuitionOutstanding = Math.max(0, tuitionDue - tuitionPaid);
-
       const totalDue = data.reduce((sum, f) => sum + parseFloat(f.amount_due || 0), 0);
       const totalPaid = data.reduce((sum, f) => sum + parseFloat(f.amount_paid || 0), 0);
       const outstanding = totalDue - totalPaid;
 
       document.getElementById('feeSummary').innerHTML = `
-        <div class="stat-card ${tuitionOutstanding > 0 ? 'red' : 'green'}"><div class="label">Tuition ${tuitionStatusBadge(child?.tuition_status)}</div><div class="value">$${tuitionOutstanding.toLocaleString()}</div></div>
         <div class="stat-card"><div class="label">Total Due</div><div class="value">$${totalDue.toLocaleString()}</div></div>
         <div class="stat-card green"><div class="label">Total Paid</div><div class="value">$${totalPaid.toLocaleString()}</div></div>
         <div class="stat-card ${outstanding > 0 ? 'red' : 'green'}"><div class="label">Outstanding</div><div class="value">$${outstanding.toLocaleString()}</div></div>

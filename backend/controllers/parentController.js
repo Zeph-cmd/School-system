@@ -18,9 +18,11 @@ function parseAcademicYearRange(value) {
 async function getMyChildren(req, res) {
   try {
     const result = await pool.query(`
-      SELECT s.*, ps.relationship,
+      SELECT DISTINCT ON (LOWER(TRIM(COALESCE(s.admission_number, ''))))
+        s.*, ps.relationship,
         ce.class_name AS current_class_name,
         ce.academic_year AS current_academic_year,
+        CASE WHEN ce.enrollment_status = 'active' THEN 0 ELSE 1 END AS enrollment_priority,
         CASE
           WHEN COALESCE(s.tuition_amount_due, 0) <= 0 THEN 'null'
           WHEN COALESCE(s.tuition_amount_paid, 0) >= COALESCE(s.tuition_amount_due, 0) THEN 'fully_paid'
@@ -31,7 +33,7 @@ async function getMyChildren(req, res) {
       JOIN parents p ON ps.parent_id = p.parent_id
       JOIN users u ON ((u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email)) OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username))
       LEFT JOIN LATERAL (
-        SELECT c.class_name, e.academic_year
+        SELECT c.class_name, e.academic_year, e.status AS enrollment_status, e.date_enrolled, e.enrollment_id
         FROM enrollments e
         JOIN classes c ON c.class_id = e.class_id
         WHERE e.student_id = s.student_id
@@ -39,7 +41,9 @@ async function getMyChildren(req, res) {
         LIMIT 1
       ) ce ON TRUE
       WHERE u.user_id = $1
-      ORDER BY s.last_name, s.first_name
+      ORDER BY LOWER(TRIM(COALESCE(s.admission_number, ''))),
+               CASE WHEN ce.enrollment_status = 'active' THEN 0 ELSE 1 END,
+               s.student_id DESC
     `, [req.user.user_id]);
     res.json(result.rows);
   } catch (err) {
