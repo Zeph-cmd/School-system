@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS roles (
 
 DO $$
 BEGIN
-    CREATE TYPE user_account_status AS ENUM ('pending', 'approved', 'declined');
+    CREATE TYPE user_account_status AS ENUM ('pending', 'approved', 'declined', 'suspended', 'terminated');
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $$;

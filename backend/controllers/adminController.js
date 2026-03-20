@@ -899,9 +899,9 @@ async function deleteTeacher(req, res) {
     if (old.rows.length === 0) return res.status(404).json({ error: 'Teacher not found' });
     // Soft delete
     await pool.query("UPDATE teachers SET status = 'resigned' WHERE teacher_id = $1", [id]);
-    const suspendedTeacherUser = await pool.query(
+    const terminatedTeacherUser = await pool.query(
       `UPDATE users
-       SET status = 'suspended'
+       SET status = 'terminated'
        WHERE user_id IN (
          SELECT u.user_id
          FROM users u
@@ -918,8 +918,11 @@ async function deleteTeacher(req, res) {
        RETURNING user_id`,
       [old.rows[0].email || null, old.rows[0].employee_number || null, old.rows[0].first_name || null]
     );
-    await req.audit('DELETE', 'teachers', parseInt(id), old.rows[0], { status: 'resigned' });
-    res.json({ message: `Teacher deactivated. ${suspendedTeacherUser.rowCount} linked user account(s) suspended.` });
+    await req.audit('DELETE', 'teachers', parseInt(id), old.rows[0], {
+      status: 'resigned',
+      terminated_user_accounts: terminatedTeacherUser.rowCount,
+    });
+    res.json({ message: `Teacher deactivated. ${terminatedTeacherUser.rowCount} linked user account(s) terminated.` });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete teacher' });
   }
