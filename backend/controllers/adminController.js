@@ -2077,17 +2077,23 @@ async function getNotifications(req, res) {
   try {
     await ensureGradeChangeRequestsTable();
     await ensureRegistrationRequestsTable();
-    const [pending, pendingGradeChanges, recentAudit] = await Promise.all([
+    const [pending, pendingGradeChanges, recentAudit, unreadMessages] = await Promise.all([
       pool.query("SELECT COUNT(*) AS cnt FROM registration_requests WHERE status = 'pending'"),
       pool.query("SELECT COUNT(*) AS cnt FROM grade_change_requests WHERE status = 'pending'"),
       pool.query("SELECT COUNT(*) AS cnt FROM audit_logs WHERE created_at > NOW() - INTERVAL '24 hours'"),
+      pool.query(
+        "SELECT COUNT(*) AS cnt FROM messages WHERE message_type = 'private' AND recipient_id = $1 AND is_read = FALSE",
+        [req.user.user_id]
+      ),
     ]);
     const pendingRegistrations = parseInt(pending.rows[0].cnt);
     const pendingGrades = parseInt(pendingGradeChanges.rows[0].cnt);
+    const unreadPrivateMessages = parseInt(unreadMessages.rows[0].cnt);
     res.json({
       pending_registrations: pendingRegistrations,
       pending_grade_changes: pendingGrades,
       pending_total: pendingRegistrations + pendingGrades,
+      unread_private_messages: unreadPrivateMessages,
       recent_activity_24h: parseInt(recentAudit.rows[0].cnt),
     });
   } catch (err) {
@@ -2335,6 +2341,15 @@ async function getConversation(req, res) {
       WHERE m.message_id = $1 OR m.parent_message_id = $1
       ORDER BY m.created_at ASC
     `, [id]);
+
+    await pool.query(
+      `UPDATE messages
+       SET is_read = TRUE
+       WHERE (message_id = $1 OR parent_message_id = $1)
+         AND recipient_id = $2`,
+      [id, req.user.user_id]
+    );
+
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch conversation' });
