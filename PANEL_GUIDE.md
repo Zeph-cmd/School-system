@@ -56,6 +56,15 @@ Important logic:
 - `declined`, `suspended`, and `terminated` are blocked at login.
 - Role checks are enforced per panel route.
 
+## Messaging vs Recovery Email
+
+- In-app messaging is database-only (`messages` table).
+- No SMTP is required for app-to-app messages:
+  - admin -> parent
+  - teacher <-> parent
+  - broadcasts
+- Admin recovery email is a separate auth safety control and does not control in-app messaging delivery.
+
 ## Audit + Traceability
 
 - Admin actions are written to `audit_logs`.

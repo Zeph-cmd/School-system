@@ -1,5 +1,4 @@
 const pool = require('../config/db');
-const { sendEmail } = require('../utils/mailer');
 
 // Parent sees: their children, fees, results, attendance
 // Parent cannot edit anything (read-only)
@@ -501,7 +500,7 @@ async function getContactTeachers(req, res) {
   }
 }
 
-// POST /api/parent/contact-admin - parent sends email to admin
+// POST /api/parent/contact-admin - parent sends in-app private message to admin
 async function contactAdmin(req, res) {
   try {
     const allowed = await requireParentMessagingAllowed(req.user.user_id, res);
@@ -517,31 +516,33 @@ async function contactAdmin(req, res) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const sender = userRes.rows[0];
-    const adminEmail = process.env.ADMIN_CONTACT_EMAIL || 'yumpinizephaniah@gmail.com';
-    const emailSubject = `[Parent Contact] ${subject}`;
-    const text = `From parent account: ${sender.username}\nFrom email: ${sender.email || 'not set'}\n\n${body}`;
-
-    const mail = await sendEmail({
-      to: adminEmail,
-      subject: emailSubject,
-      text,
-      replyTo: sender.email || undefined,
-    });
-
-    if (!mail.sent) {
-      return res.status(503).json({
-        error: 'Email service not configured. Set SMTP_USER and SMTP_PASS to enable sending.',
-      });
+    const adminRes = await pool.query(
+      `SELECT u.user_id
+       FROM users u
+       JOIN user_roles ur ON ur.user_id = u.user_id
+       JOIN roles r ON r.role_id = ur.role_id
+       WHERE r.role_name = 'admin' AND u.status = 'approved'
+       ORDER BY CASE WHEN LOWER(u.username) = 'admin' THEN 0 ELSE 1 END, u.user_id
+       LIMIT 1`
+    );
+    if (adminRes.rows.length === 0) {
+      return res.status(404).json({ error: 'No active admin account found' });
     }
 
-    res.status(201).json({ message: 'Email sent to admin' });
+    const result = await pool.query(
+      `INSERT INTO messages (sender_id, recipient_id, message_type, subject, body)
+       VALUES ($1,$2,'private',$3,$4)
+       RETURNING *`,
+      [req.user.user_id, adminRes.rows[0].user_id, `[Parent Contact] ${subject}`, body]
+    );
+
+    res.status(201).json({ message: 'Message sent to admin', message_id: result.rows[0].message_id });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to send email to admin' });
+    res.status(500).json({ error: 'Failed to send message to admin' });
   }
 }
 
-// POST /api/parent/contact-teacher - parent sends email to teacher
+// POST /api/parent/contact-teacher - parent sends in-app private message to teacher
 async function contactTeacher(req, res) {
   try {
     const allowed = await requireParentMessagingAllowed(req.user.user_id, res);
@@ -553,7 +554,7 @@ async function contactTeacher(req, res) {
     }
 
     const access = await pool.query(`
-      SELECT DISTINCT t.teacher_id, t.email,
+      SELECT DISTINCT t.teacher_id, t.email, tu.user_id AS teacher_user_id,
         t.first_name || ' ' || t.last_name AS teacher_name
       FROM parents p
       JOIN users u ON ((u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email)) OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username))
@@ -561,7 +562,16 @@ async function contactTeacher(req, res) {
       JOIN enrollments e ON ps.student_id = e.student_id AND e.status = 'active'
       JOIN teaching_assignments ta ON e.class_id = ta.class_id
       JOIN teachers t ON ta.teacher_id = t.teacher_id
+      JOIN users tu ON (
+        (tu.email IS NOT NULL AND t.email IS NOT NULL AND LOWER(t.email) = LOWER(tu.email))
+        OR LOWER(SPLIT_PART(COALESCE(t.email, ''), '@', 1)) = LOWER(tu.username)
+        OR LOWER(COALESCE(t.employee_number, '')) = LOWER(tu.username)
+      )
+      JOIN user_roles tur ON tur.user_id = tu.user_id
+      JOIN roles tr ON tr.role_id = tur.role_id
       WHERE u.user_id = $1 AND t.teacher_id = $2
+        AND tr.role_name = 'teacher'
+        AND tu.status = 'approved'
     `, [req.user.user_id, teacher_id]);
 
     if (access.rows.length === 0) {
@@ -569,32 +579,16 @@ async function contactTeacher(req, res) {
     }
 
     const teacher = access.rows[0];
-    if (!teacher.email) {
-      return res.status(400).json({ error: 'Selected teacher does not have an email' });
-    }
+    const result = await pool.query(
+      `INSERT INTO messages (sender_id, recipient_id, message_type, subject, body)
+       VALUES ($1,$2,'private',$3,$4)
+       RETURNING *`,
+      [req.user.user_id, teacher.teacher_user_id, `[Parent Contact] ${subject}`, body]
+    );
 
-    const senderRes = await pool.query('SELECT username, email FROM users WHERE user_id = $1', [req.user.user_id]);
-    const sender = senderRes.rows[0] || { username: 'parent', email: null };
-
-    const emailSubject = `[Parent Contact] ${subject}`;
-    const text = `From parent account: ${sender.username}\nFrom email: ${sender.email || 'not set'}\n\n${body}`;
-
-    const mail = await sendEmail({
-      to: teacher.email,
-      subject: emailSubject,
-      text,
-      replyTo: sender.email || undefined,
-    });
-
-    if (!mail.sent) {
-      return res.status(503).json({
-        error: 'Email service not configured. Set SMTP_USER and SMTP_PASS to enable sending.',
-      });
-    }
-
-    res.status(201).json({ message: `Email sent to ${teacher.teacher_name}` });
+    res.status(201).json({ message: `Message sent to ${teacher.teacher_name}`, message_id: result.rows[0].message_id });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to send email to teacher' });
+    res.status(500).json({ error: 'Failed to send message to teacher' });
   }
 }
 

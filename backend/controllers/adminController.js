@@ -1,7 +1,6 @@
 const pool = require('../config/db');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
-const { sendEmail } = require('../utils/mailer');
 
 function defaultAcademicYear() {
   const y = new Date().getFullYear();
@@ -2248,25 +2247,6 @@ async function sendBroadcast(req, res) {
       [req.user.user_id, class_id, subj || null, body]
     );
 
-    // Email copy to parents in this class (best-effort, does not block success)
-    const recipients = await pool.query(`
-      SELECT DISTINCT p.email
-      FROM enrollments e
-      JOIN parent_student ps ON e.student_id = ps.student_id
-      JOIN parents p ON ps.parent_id = p.parent_id
-      WHERE e.class_id = $1 AND e.status = 'active'
-        AND p.email IS NOT NULL AND p.email <> ''
-    `, [class_id]);
-
-    const emails = recipients.rows.map(r => r.email).filter(Boolean);
-    if (emails.length > 0) {
-      await sendEmail({
-        to: emails.join(','),
-        subject: subj || 'School Broadcast',
-        text: body,
-      }).catch(() => null);
-    }
-
     await req.audit('CREATE', 'messages', result.rows[0].message_id, null, { type: 'broadcast', class_id });
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -2276,76 +2256,57 @@ async function sendBroadcast(req, res) {
 
 async function sendPrivateMessage(req, res) {
   try {
-    await ensureEmailLogsTable();
-    const recipient_email = (req.body.recipient_email || '').trim().toLowerCase();
+    const recipientRaw = String(req.body.recipient || req.body.recipient_email || '').trim();
     const subj = (req.body.subject || '').trim();
     const message = (req.body.message || req.body.body || '').trim();
 
-    if (!recipient_email || !message) {
-      return res.status(400).json({ error: 'recipient_email and message are required' });
+    if (!recipientRaw || !message) {
+      return res.status(400).json({ error: 'recipient and message are required' });
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(recipient_email)) {
-      return res.status(400).json({ error: 'Invalid recipient email format' });
+    const rcptUser = await pool.query(
+      `SELECT u.user_id, u.username, u.email
+       FROM users u
+       WHERE LOWER(COALESCE(u.email, '')) = LOWER($1)
+          OR LOWER(u.username) = LOWER($1)
+       LIMIT 1`,
+      [recipientRaw]
+    );
+    if (rcptUser.rows.length === 0) {
+      return res.status(404).json({ error: 'Recipient user not found in app. Use a valid username or email.' });
     }
-
-    const mail = await sendEmail({
-      to: recipient_email,
-      subject: subj || 'Private Message',
-      text: message,
-    });
-
-    if (!mail.sent) {
-      return res.status(503).json({ error: 'SMTP email service is not configured' });
-    }
-
-    // Link to user if email belongs to an internal account; keep nullable for external emails.
-    const rcptUser = await pool.query('SELECT user_id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1', [recipient_email]);
-    const recipient_id = rcptUser.rows[0]?.user_id || null;
+    const recipient = rcptUser.rows[0];
 
     const result = await pool.query(
       `INSERT INTO messages (sender_id, recipient_id, message_type, subject, body)
        VALUES ($1,$2,'private',$3,$4) RETURNING *`,
-      [req.user.user_id, recipient_id, subj || null, message]
-    );
-
-    const log = await pool.query(
-      `INSERT INTO email_logs (message_id, recipient_email, subject, message, sent_by_admin, sent_at)
-       VALUES ($1,$2,$3,$4,$5,NOW()) RETURNING email_log_id`,
-      [result.rows[0].message_id, recipient_email, subj || null, message, req.user.user_id]
+      [req.user.user_id, recipient.user_id, subj || null, message]
     );
 
     await req.audit('CREATE', 'messages', result.rows[0].message_id, null, {
       type: 'private',
-      recipient_id,
-      recipient_email,
-    });
-    await req.audit('CREATE', 'email_logs', log.rows[0].email_log_id, null, {
-      recipient_email,
-      subject: subj || null,
+      recipient_id: recipient.user_id,
+      recipient_username: recipient.username,
+      recipient_email: recipient.email,
     });
 
-    res.status(201).json({ ...result.rows[0], recipient_email, email_log_id: log.rows[0].email_log_id });
+    res.status(201).json({ ...result.rows[0], recipient_username: recipient.username, recipient_email: recipient.email });
   } catch (err) {
-    console.error('Private email send error:', err);
-    res.status(500).json({ error: 'Failed to send private email' });
+    res.status(500).json({ error: 'Failed to send private message' });
   }
 }
 
 async function getAdminMessages(req, res) {
   try {
-    await ensureEmailLogsTable();
     const { type } = req.query;
     let query = `
       SELECT m.*, u.username AS sender_name,
-        COALESCE(ru.username, el.recipient_email) AS recipient_name,
-        el.recipient_email,
+        ru.username AS recipient_name,
+        ru.email AS recipient_email,
         c.class_name
       FROM messages m
       LEFT JOIN users u ON m.sender_id = u.user_id
       LEFT JOIN users ru ON m.recipient_id = ru.user_id
-      LEFT JOIN email_logs el ON el.message_id = m.message_id
       LEFT JOIN classes c ON m.class_id = c.class_id
       WHERE m.parent_message_id IS NULL
     `;
@@ -2398,16 +2359,6 @@ async function replyMessage(req, res) {
        VALUES ($1,$2,'private',$3,$4,$5) RETURNING *`,
       [req.user.user_id, recipientId, origMsg.subject ? 'Re: ' + origMsg.subject : null, body, origMsg.parent_message_id || origMsg.message_id]
     );
-
-    const rcpt = await pool.query('SELECT email FROM users WHERE user_id = $1', [recipientId]);
-    const recipientEmail = rcpt.rows[0]?.email;
-    if (recipientEmail) {
-      await sendEmail({
-        to: recipientEmail,
-        subject: result.rows[0].subject || 'Private Message Reply',
-        text: body,
-      }).catch(() => null);
-    }
 
     res.status(201).json(result.rows[0]);
   } catch (err) {

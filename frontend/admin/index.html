@@ -273,7 +273,7 @@
         <div id="msgPrivate" style="display:none">
           <div class="msg-compose">
             <h3>Send Private Message</h3>
-            <div class="form-group"><label>Recipient Email</label><input type="email" id="pmRecipientEmail" placeholder="recipient@example.com"></div>
+            <div class="form-group"><label>Recipient (Username or Email)</label><input type="text" id="pmRecipientEmail" placeholder="parentuser or parent@example.com"></div>
             <div class="form-group"><label>Subject</label><input type="text" id="pmSubject" placeholder="Message subject"></div>
             <div class="form-group"><label>Message</label><textarea id="pmBody" rows="4" placeholder="Type your private message..."></textarea></div>
             <button class="btn btn-primary" onclick="sendPrivateMsg()">Send Message</button>
@@ -1692,16 +1692,15 @@
     }
 
     async function sendPrivateMsg() {
-      const recipient_email = document.getElementById('pmRecipientEmail').value.trim();
+      const recipient = document.getElementById('pmRecipientEmail').value.trim();
       const subject = document.getElementById('pmSubject').value.trim();
       const body = document.getElementById('pmBody').value.trim();
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!recipient_email || !emailRegex.test(recipient_email)) { showAlert('Enter a valid recipient email', 'error'); return; }
+      if (!recipient) { showAlert('Enter recipient username or email', 'error'); return; }
       if (!body) { showAlert('Enter message body', 'error'); return; }
 
-      const res = await api(`${API}/messages/private`, 'POST', { recipient_email, subject, message: body });
+      const res = await api(`${API}/messages/private`, 'POST', { recipient, subject, message: body });
       if (res && !res.error) {
-        showAlert('Email sent successfully!');
+        showAlert('Message sent successfully');
         document.getElementById('pmRecipientEmail').value = '';
         document.getElementById('pmSubject').value = '';
         document.getElementById('pmBody').value = '';

@@ -10,6 +10,7 @@ const teacherRoutes = require('./routes/teacher');
 const parentRoutes = require('./routes/parent');
 
 const app = express();
+app.set('trust proxy', true);
 
 // Middleware
 app.use(cors());

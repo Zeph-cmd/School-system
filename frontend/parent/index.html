@@ -173,10 +173,10 @@
 
       <!-- Contact -->
       <div id="sec-contact" class="section">
-        <h1>Contact School</h1>
+        <h1>Contact School (In-App)</h1>
         <div id="parentContactRestriction" class="alert" style="display:none; margin-bottom:0.8rem;"></div>
         <div class="record-card">
-          <h3>Contact Admin</h3>
+          <h3>Message Admin</h3>
           <div class="form-group">
             <label>Subject</label>
             <input type="text" id="contactAdminSubject" placeholder="What is this about?">
@@ -185,11 +185,11 @@
             <label>Message</label>
             <textarea id="contactAdminBody" rows="4" placeholder="Type your message to admin..."></textarea>
           </div>
-          <button id="contactAdminBtn" class="btn btn-primary" onclick="sendAdminEmail()">Contact Admin</button>
+          <button id="contactAdminBtn" class="btn btn-primary" onclick="sendAdminEmail()">Send to Admin</button>
         </div>
 
         <div class="record-card">
-          <h3>Contact Subject Teacher</h3>
+          <h3>Message Subject Teacher</h3>
           <div class="form-group">
             <label>Teacher / Subject</label>
             <select id="contactTeacherSelect">
@@ -204,7 +204,7 @@
             <label>Message</label>
             <textarea id="contactTeacherBody" rows="4" placeholder="Type your message to the teacher..."></textarea>
           </div>
-          <button id="contactTeacherBtn" class="btn btn-primary" onclick="sendTeacherEmail()">Contact Teacher</button>
+          <button id="contactTeacherBtn" class="btn btn-primary" onclick="sendTeacherEmail()">Send to Teacher</button>
         </div>
       </div>
     </main>
@@ -697,11 +697,11 @@
       }
       const res = await api(`${API}/contact-admin`, 'POST', { subject, body });
       if (res && !res.error) {
-        showAlert('Your email has been sent to admin');
+        showAlert('Your message has been sent to admin');
         document.getElementById('contactAdminSubject').value = '';
         document.getElementById('contactAdminBody').value = '';
       } else {
-        showAlert(res?.error || 'Failed to send email', 'error');
+        showAlert(res?.error || 'Failed to send message', 'error');
       }
     }
 
@@ -719,11 +719,11 @@
       }
       const res = await api(`${API}/contact-teacher`, 'POST', { teacher_id, subject, body });
       if (res && !res.error) {
-        showAlert('Your email has been sent to the teacher');
+        showAlert('Your message has been sent to the teacher');
         document.getElementById('contactTeacherSubject').value = '';
         document.getElementById('contactTeacherBody').value = '';
       } else {
-        showAlert(res?.error || 'Failed to send email', 'error');
+        showAlert(res?.error || 'Failed to send message', 'error');
       }
     }
   </script>

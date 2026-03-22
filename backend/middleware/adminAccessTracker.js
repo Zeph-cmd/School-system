@@ -1,5 +1,33 @@
 const pool = require('../config/db');
 
+function normalizeIp(rawIp) {
+  const ip = String(rawIp || '').trim();
+  if (!ip) return 'unknown';
+  if (ip.startsWith('::ffff:')) return ip.slice(7);
+  if (ip === '::1') return '127.0.0.1';
+  return ip;
+}
+
+function getClientIp(req) {
+  const xForwardedFor = req.headers['x-forwarded-for'];
+  if (xForwardedFor) {
+    const first = String(xForwardedFor).split(',')[0];
+    return normalizeIp(first);
+  }
+
+  const cfIp = req.headers['cf-connecting-ip'];
+  if (cfIp) {
+    return normalizeIp(cfIp);
+  }
+
+  const realIp = req.headers['x-real-ip'];
+  if (realIp) {
+    return normalizeIp(realIp);
+  }
+
+  return normalizeIp(req.ip || req.socket?.remoteAddress);
+}
+
 async function ensureAdminIpRegistryTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS admin_ip_registry (
@@ -46,7 +74,7 @@ async function getOrCreateAdminIpAccessNumber(ipAddress, userId) {
 
 async function trackAdminIpAccess(req, res, next) {
   try {
-    const accessNumber = await getOrCreateAdminIpAccessNumber(req.ip, req.user?.user_id || null);
+    const accessNumber = await getOrCreateAdminIpAccessNumber(getClientIp(req), req.user?.user_id || null);
     req.adminAccessNumber = accessNumber;
     return next();
   } catch (err) {
