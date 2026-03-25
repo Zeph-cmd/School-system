@@ -883,13 +883,30 @@ async function replyMessage(req, res) {
   }
 }
 
+async function getUnreadCount(req, res) {
+  try {
+    await ensureMessagesTable();
+    const result = await pool.query(
+      `SELECT COUNT(*) AS cnt
+       FROM messages
+       WHERE message_type = 'private'
+         AND recipient_id = $1
+         AND is_read = FALSE`,
+      [req.user.user_id]
+    );
+    res.json({ unread: parseInt(result.rows[0]?.cnt || '0', 10) });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch unread message count' });
+  }
+}
+
 module.exports = {
   getProfile, getMyAssignments, getMyStudents,
   getAttendance, markAttendance,
   getGrades, getGradeEditStatus, enterGrade,
   getHomework, createHomework, updateHomework, deleteHomework,
   getDeletedHomework, restoreDeletedHomework,
-  getMessageParents, getMyMessages, sendParentMessage, getMessageConversation, replyMessage,
+  getMessageParents, getMyMessages, sendParentMessage, getMessageConversation, replyMessage, getUnreadCount,
 };
 
 

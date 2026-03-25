@@ -16,7 +16,7 @@
         <a href="#" data-section="grades">&#128200; <span>Grades</span></a>
         <a href="#" data-section="fees">&#128176; <span>Fees</span></a>
         <a href="#" data-section="homework">&#128218; <span>Homework</span></a>
-        <a href="#" data-section="messages">&#128172; <span>Messages</span></a>
+        <a href="#" data-section="messages">&#128172; <span>Messages</span> <span class="notif-badge" id="parentMessageBadge" style="display:none; background:#f59e0b; color:#fff;"></span></a>
         <a href="#" data-section="contact">&#9993; <span>Contact</span></a>
       </nav>
       <button class="logout-btn" onclick="logout()">Logout</button>
@@ -566,6 +566,20 @@
 
     async function loadParentMessages() {
       loadParentBroadcasts();
+      loadParentUnreadCount();
+    }
+
+    async function loadParentUnreadCount() {
+      const data = await api(`${API}/messages/unread-count`);
+      if (!data || data.error) return;
+      const badge = document.getElementById('parentMessageBadge');
+      const unread = Number(data.unread || 0);
+      if (unread > 0) {
+        badge.textContent = unread;
+        badge.style.display = 'inline-block';
+      } else {
+        badge.style.display = 'none';
+      }
     }
 
     async function loadParentBroadcasts() {
@@ -616,6 +630,7 @@
     async function openParentConversation(msgId) {
       const data = await api(`${API}/messages/${msgId}/conversation`);
       if (!data) return;
+      loadParentUnreadCount();
 
       const user = JSON.parse(localStorage.getItem('user'));
       const myId = user.user_id;
@@ -672,6 +687,7 @@
       document.querySelectorAll('.msg-tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.msg-tab')[1].classList.add('active');
       loadParentPrivate();
+      loadParentUnreadCount();
     }
 
     // ── Email Contact ───────────────────────────────
@@ -726,6 +742,8 @@
         showAlert(res?.error || 'Failed to send message', 'error');
       }
     }
+
+    loadParentUnreadCount();
   </script>
 </body>
 </html>

@@ -30,6 +30,7 @@ router.post('/homework/deleted/:id/restore', teacher.restoreDeletedHomework);
 
 // Messages (teacher <-> parents in assigned classes only)
 router.get('/messages/parents', teacher.getMessageParents);
+router.get('/messages/unread-count', teacher.getUnreadCount);
 router.get('/messages', teacher.getMyMessages);
 router.post('/messages/private', teacher.sendParentMessage);
 router.get('/messages/:id/conversation', teacher.getMessageConversation);
