@@ -360,8 +360,8 @@
         showAlert('Your parent profile is not fully loaded. Refresh and try again.', 'error');
         return;
       }
-      if (!studentFirst || !studentLast || !guardian) {
-        showAlert('Student first name, last name, and guardian name are required.', 'error');
+      if (!studentFirst || !studentLast || !admission || !guardian) {
+        showAlert('Student first name, last name, admission number, and guardian name are required.', 'error');
         return;
       }
       if (!password) {
@@ -376,9 +376,9 @@
         role: 'parent',
         student_first_name: studentFirst,
         student_last_name: studentLast,
+        student_admission_number: admission,
         guardian_name: guardian,
       };
-      if (admission) body.student_admission_number = admission;
       if (relationship) body.parent_relationship = relationship;
 
       try {

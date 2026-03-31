@@ -634,6 +634,68 @@ async function forgotCredentials(req, res) {
   }
 }
 
+// POST /api/auth/parent/forgot-password
+async function parentForgotPassword(req, res) {
+  try {
+    const firstName = String(req.body.first_name || '').trim();
+    const lastName = String(req.body.last_name || '').trim();
+    const admissionNo = String(req.body.admission_number || '').trim();
+
+    if (!firstName || !lastName || !admissionNo) {
+      return res.status(400).json({ error: 'First name, last name, and admission number are required' });
+    }
+
+    const parentAccount = await pool.query(
+      `SELECT DISTINCT u.user_id, u.username
+       FROM students s
+       JOIN parent_student ps ON ps.student_id = s.student_id
+       JOIN parents p ON p.parent_id = ps.parent_id
+       JOIN users u ON LOWER(COALESCE(u.email, '')) = LOWER(COALESCE(p.email, ''))
+       JOIN user_roles ur ON ur.user_id = u.user_id
+       JOIN roles r ON r.role_id = ur.role_id
+       WHERE r.role_name = 'parent'
+         AND LOWER(TRIM(s.first_name)) = LOWER(TRIM($1))
+         AND LOWER(TRIM(s.last_name)) = LOWER(TRIM($2))
+         AND LOWER(TRIM(COALESCE(s.admission_number, ''))) = LOWER(TRIM($3))
+       ORDER BY u.user_id
+       LIMIT 1`,
+      [firstName, lastName, admissionNo]
+    );
+
+    if (parentAccount.rows.length === 0) {
+      return res.status(404).json({ error: 'No matching account found. Please visit the school for manual recovery.' });
+    }
+
+    const tempPassword = `Parent@${Math.floor(100000 + Math.random() * 900000)}`;
+    const hash = await bcrypt.hash(tempPassword, SALT_ROUNDS);
+    await pool.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [hash, parentAccount.rows[0].user_id]);
+
+    await logAction({
+      action: 'PARENT_FORGOT_PASSWORD_RESET',
+      tableName: 'auth',
+      newData: {
+        parent_user_id: parentAccount.rows[0].user_id,
+        username: parentAccount.rows[0].username,
+        verified_by: {
+          first_name: firstName,
+          last_name: lastName,
+          admission_number: admissionNo,
+        },
+      },
+      ip: req.ip,
+    });
+
+    return res.json({
+      message: 'Identity verified. Use this temporary password to sign in.',
+      username: parentAccount.rows[0].username,
+      temporary_password: tempPassword,
+    });
+  } catch (err) {
+    console.error('Parent forgot password error:', err);
+    return res.status(500).json({ error: 'Failed to process forgot password request' });
+  }
+}
+
 // GET /api/auth/me
 async function me(req, res) {
   try {
@@ -651,4 +713,4 @@ async function me(req, res) {
   }
 }
 
-module.exports = { register, login, me, adminForgotPassword, forgotCredentials };
+module.exports = { register, login, me, adminForgotPassword, forgotCredentials, parentForgotPassword };

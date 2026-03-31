@@ -224,6 +224,26 @@
       setTimeout(() => el.innerHTML = '', 3000);
     }
 
+    function escHtml(str) {
+      const d = document.createElement('div');
+      d.textContent = str || '';
+      return d.innerHTML;
+    }
+
+    function parentContextText(message) {
+      if (!message || !message.parent_full_name) return '';
+      const parts = [`Parent: ${message.parent_full_name}`];
+      if (message.linked_student_names) parts.push(`Student(s): ${message.linked_student_names}`);
+      if (message.linked_class_names) parts.push(`Class: ${message.linked_class_names}`);
+      return parts.join(' | ');
+    }
+
+    function parentContextRow(message) {
+      const text = parentContextText(message);
+      if (!text) return '';
+      return `<div style="display:flex; flex-wrap:wrap; gap:0.6rem; font-size:0.82rem; color:var(--text-light); margin:0.3rem 0;">${escHtml(text)}</div>`;
+    }
+
     function logout() {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
@@ -592,11 +612,13 @@
         const isUnreadInbound = Number(m.recipient_id || 0) === myId && !m.is_read;
         const rowStyle = isUnreadInbound ? ' style="background:rgba(245,158,11,0.08); border-left:4px solid #f59e0b;"' : '';
         const subjectText = `${m.subject || '-'}${isUnreadInbound ? ' (New)' : ''}`;
+        const contextText = parentContextText(m);
+        const contextHtml = contextText ? `<div style="font-size:0.8rem; color:var(--text-light); margin-top:0.2rem;">${escHtml(contextText)}</div>` : '';
         return `<tr${rowStyle}>
           <td>${m.message_id}</td>
-          <td>${m.sender_name || '-'}</td>
-          <td>${m.recipient_name || '-'}</td>
-          <td${rowStyle ? ' style="font-weight:700;"' : ''}>${subjectText}</td>
+          <td>${escHtml(m.parent_full_name || m.sender_name || '-')}</td>
+          <td>${escHtml(m.recipient_name || '-')}</td>
+          <td${rowStyle ? ' style="font-weight:700;"' : ''}>${escHtml(subjectText)}${contextHtml}</td>
           <td>${date}</td>
           <td><button class="btn btn-sm" onclick="openTeacherConversation(${m.message_id})">Open</button></td>
         </tr>`;
@@ -652,16 +674,18 @@
       const thread = data.map(m => {
         const isMine = m.sender_id === myId;
         const time = m.created_at ? new Date(m.created_at).toLocaleString() : '';
+        const senderLabel = m.parent_full_name || m.sender_name || 'User';
         return `<div class="msg-bubble ${isMine ? 'sent' : 'received'}">
-          <div class="bubble-sender">${m.sender_name || 'User'}</div>
-          ${m.body || ''}
+          <div class="bubble-sender">${escHtml(senderLabel)}</div>
+          ${parentContextRow(m)}
+          ${escHtml(m.body || '')}
           <div class="bubble-time">${time}</div>
         </div>`;
       }).join('');
 
       conv.innerHTML = `
         <div class="conversation-view">
-          <h3><button class="back-btn" onclick="backToTeacherMessages()">&#8592;</button> ${firstMsg?.subject || 'Conversation'}</h3>
+          <h3><button class="back-btn" onclick="backToTeacherMessages()">&#8592;</button> ${escHtml(firstMsg?.subject || 'Conversation')}</h3>
           <div class="msg-thread">${thread}</div>
           <div class="reply-box">
             <textarea id="teacherReplyBody" rows="2" placeholder="Type reply..."></textarea>

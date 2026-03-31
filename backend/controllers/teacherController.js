@@ -749,10 +749,31 @@ async function getMyMessages(req, res) {
     if (allowedIds.length === 0) return res.json([]);
 
     const result = await pool.query(
-      `SELECT m.*, su.username AS sender_name, ru.username AS recipient_name
+      `SELECT m.*, su.username AS sender_name, ru.username AS recipient_name,
+              pc.parent_full_name,
+              pc.linked_student_names,
+              pc.linked_class_names
        FROM messages m
        LEFT JOIN users su ON su.user_id = m.sender_id
        LEFT JOIN users ru ON ru.user_id = m.recipient_id
+       LEFT JOIN LATERAL (
+         SELECT
+           p.first_name || ' ' || p.last_name AS parent_full_name,
+           STRING_AGG(DISTINCT s.first_name || ' ' || s.last_name, ', ') AS linked_student_names,
+           STRING_AGG(DISTINCT cls.class_name, ', ') AS linked_class_names
+         FROM users pu
+         JOIN parents p ON (
+           (pu.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(pu.email))
+           OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(pu.username)
+         )
+         LEFT JOIN parent_student ps ON ps.parent_id = p.parent_id
+         LEFT JOIN students s ON s.student_id = ps.student_id
+         LEFT JOIN enrollments e ON e.student_id = s.student_id AND e.status = 'active'
+         LEFT JOIN classes cls ON cls.class_id = e.class_id
+         WHERE pu.user_id = m.sender_id
+         GROUP BY p.first_name, p.last_name
+         LIMIT 1
+       ) pc ON TRUE
        WHERE m.message_type = 'private'
          AND m.parent_message_id IS NULL
          AND (
@@ -821,9 +842,30 @@ async function getMessageConversation(req, res) {
     }
 
     const result = await pool.query(
-      `SELECT m.*, u.username AS sender_name
+      `SELECT m.*, u.username AS sender_name,
+              pc.parent_full_name,
+              pc.linked_student_names,
+              pc.linked_class_names
        FROM messages m
        LEFT JOIN users u ON u.user_id = m.sender_id
+       LEFT JOIN LATERAL (
+         SELECT
+           p.first_name || ' ' || p.last_name AS parent_full_name,
+           STRING_AGG(DISTINCT s.first_name || ' ' || s.last_name, ', ') AS linked_student_names,
+           STRING_AGG(DISTINCT cls.class_name, ', ') AS linked_class_names
+         FROM users pu
+         JOIN parents p ON (
+           (pu.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(pu.email))
+           OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(pu.username)
+         )
+         LEFT JOIN parent_student ps ON ps.parent_id = p.parent_id
+         LEFT JOIN students s ON s.student_id = ps.student_id
+         LEFT JOIN enrollments e ON e.student_id = s.student_id AND e.status = 'active'
+         LEFT JOIN classes cls ON cls.class_id = e.class_id
+         WHERE pu.user_id = m.sender_id
+         GROUP BY p.first_name, p.last_name
+         LIMIT 1
+       ) pc ON TRUE
        WHERE m.message_id = $1 OR m.parent_message_id = $1
        ORDER BY m.created_at ASC`,
       [messageId]

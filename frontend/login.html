@@ -31,6 +31,28 @@
     .parent-fields { display: none; }
     .parent-fields.show { display: block; }
     .login-card { max-width: 450px; }
+    .fp-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 1rem;
+    }
+    .fp-modal-overlay.show { display: flex; }
+    .fp-modal {
+      width: 100%;
+      max-width: 420px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
+      padding: 1rem 1rem 1.2rem;
+    }
+    .fp-modal h3 { margin-bottom: 0.4rem; }
+    .fp-modal p { color: var(--text-light); margin-bottom: 0.9rem; font-size: 0.9rem; }
+    .fp-actions { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 0.8rem; }
   </style>
 </head>
 <body>
@@ -82,7 +104,7 @@
               <a onclick="adminForgotPassword()">Forgot password?</a>
             </div>
             <div class="toggle-link" id="roleForgotWrap" style="display:none; text-align:right; margin: -0.2rem 0 0.5rem 0;">
-              <a onclick="roleForgotCredentials()">Forgot credentials?</a>
+              <a id="roleForgotLink" onclick="handleRoleForgot()">Forgot credentials?</a>
             </div>
             <button type="submit" class="btn btn-primary" style="width:100%; margin-top:0.5rem">Sign In</button>
           </form>
@@ -192,6 +214,31 @@
     </div>
   </div>
 
+  <div class="fp-modal-overlay" id="parentForgotModal">
+    <div class="fp-modal">
+      <h3>Parent Password Recovery</h3>
+      <p>Enter your child details exactly as saved in school records.</p>
+      <form id="parentForgotForm">
+        <div class="form-group">
+          <label>Student First Name</label>
+          <input type="text" id="fpFirstName" required>
+        </div>
+        <div class="form-group">
+          <label>Student Last Name</label>
+          <input type="text" id="fpLastName" required>
+        </div>
+        <div class="form-group">
+          <label>Student Admission Number (ADM)</label>
+          <input type="text" id="fpAdmissionNo" required>
+        </div>
+        <div class="fp-actions">
+          <button type="button" class="btn" onclick="closeParentForgotModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Verify</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     const alertDiv = document.getElementById('alert');
     let selectedLoginRole = null;
@@ -252,6 +299,7 @@
       const passwordGroup = document.getElementById('loginPasswordGroup');
       const forgotWrap = document.getElementById('adminForgotWrap');
       const roleForgotWrap = document.getElementById('roleForgotWrap');
+      const roleForgotLink = document.getElementById('roleForgotLink');
       const emailInput = document.getElementById('loginEmail');
       const passwordInput = document.getElementById('loginPassword');
       if (selectedLoginRole === 'admin') {
@@ -267,6 +315,7 @@
         emailGroup.style.display = 'block';
         forgotWrap.style.display = 'none';
         roleForgotWrap.style.display = 'block';
+        roleForgotLink.textContent = selectedLoginRole === 'parent' ? 'Forgot password?' : 'Forgot credentials?';
         passwordInput.required = false;
         emailInput.required = true;
         passwordInput.value = '';
@@ -469,6 +518,56 @@
         alertDiv.innerHTML = '<div class="alert alert-error">Connection error. Is the server running?</div>';
       }
     }
+
+    function handleRoleForgot() {
+      if (selectedLoginRole === 'parent') {
+        openParentForgotModal();
+        return;
+      }
+      roleForgotCredentials();
+    }
+
+    function openParentForgotModal() {
+      if (selectedLoginRole !== 'parent') return;
+      document.getElementById('parentForgotForm').reset();
+      document.getElementById('parentForgotModal').classList.add('show');
+      document.getElementById('fpFirstName').focus();
+    }
+
+    function closeParentForgotModal() {
+      document.getElementById('parentForgotModal').classList.remove('show');
+    }
+
+    document.getElementById('parentForgotModal').addEventListener('click', (e) => {
+      if (e.target.id === 'parentForgotModal') closeParentForgotModal();
+    });
+
+    document.getElementById('parentForgotForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      alertDiv.innerHTML = '';
+
+      const first_name = document.getElementById('fpFirstName').value.trim();
+      const last_name = document.getElementById('fpLastName').value.trim();
+      const admission_number = document.getElementById('fpAdmissionNo').value.trim();
+
+      try {
+        const res = await fetch('/api/auth/parent/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ first_name, last_name, admission_number }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alertDiv.innerHTML = `<div class="alert alert-error">${escapeHtml(data.error || 'Verification failed. Please visit school for manual recovery.')}</div>`;
+          closeParentForgotModal();
+          return;
+        }
+        alertDiv.innerHTML = `<div class="alert alert-success">${escapeHtml(data.message || 'Identity verified.')}<br>Username: ${escapeHtml(data.username || '-')}<br>Temporary Password: ${escapeHtml(data.temporary_password || '-')}</div>`;
+        closeParentForgotModal();
+      } catch (err) {
+        alertDiv.innerHTML = '<div class="alert alert-error">Connection error. Is the server running?</div>';
+      }
+    });
 
     function redirectByRole(roles) {
       if (roles.includes('admin')) {

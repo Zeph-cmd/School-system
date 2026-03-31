@@ -1394,6 +1394,20 @@
       return d.innerHTML;
     }
 
+    function formatParentContextRow(message) {
+      if (!message || !message.parent_full_name) return '';
+      const parts = [
+        `<span><strong>Parent:</strong> ${escHtml(message.parent_full_name)}</span>`,
+      ];
+      if (message.linked_student_names) {
+        parts.push(`<span><strong>Student(s):</strong> ${escHtml(message.linked_student_names)}</span>`);
+      }
+      if (message.linked_class_names) {
+        parts.push(`<span><strong>Class:</strong> ${escHtml(message.linked_class_names)}</span>`);
+      }
+      return `<div style="display:flex; flex-wrap:wrap; gap:0.75rem; font-size:0.82rem; color:var(--text-light); margin:0.3rem 0;">${parts.join('<span>|</span>')}</div>`;
+    }
+
     // ── Audit Logs ──────────────────────────────────
     function parseAuditJson(value) {
       if (!value) return null;
@@ -1737,12 +1751,14 @@
         const isUnreadInbound = m.message_type === 'private' && Number(m.recipient_id) === Number(myId) && !m.is_read;
         const unreadStyle = isUnreadInbound ? 'border-left:4px solid #f59e0b; background:rgba(245,158,11,0.08);' : '';
         const unreadPill = isUnreadInbound ? '<span class="msg-badge" style="background:#f59e0b; color:#fff; margin-left:0.45rem;">New</span>' : '';
+        const parentContext = formatParentContextRow(m);
         return `<div class="msg-card ${m.message_type === 'broadcast' ? 'broadcast' : ''}" style="${unreadStyle}" onclick="openConversation(${m.message_id})">
           <div class="msg-header">
             <span class="msg-sender">To: ${escHtml(target)} ${typeBadge} ${unreadPill}</span>
             <span class="msg-time">${time}</span>
           </div>
           ${m.subject ? `<div class="msg-subject">${escHtml(m.subject)}</div>` : ''}
+          ${parentContext}
           <div class="msg-preview">${escHtml(m.body)}</div>
         </div>`;
       }).join('');
@@ -1768,9 +1784,12 @@
       let thread = data.map(m => {
         const isSent = m.sender_id === myId;
         const time = m.created_at ? new Date(m.created_at).toLocaleString() : '';
+        const parentContext = formatParentContextRow(m);
+        const senderLabel = m.parent_full_name || m.sender_name;
         return `<div class="msg-bubble ${isSent ? 'sent' : 'received'}">
-          <div class="bubble-sender">${escHtml(m.sender_name)}</div>
-          ${m.body}
+          <div class="bubble-sender">${escHtml(senderLabel)}</div>
+          ${parentContext}
+          ${escHtml(m.body || '')}
           <div class="bubble-time">${time}</div>
         </div>`;
       }).join('');
