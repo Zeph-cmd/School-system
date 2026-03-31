@@ -511,30 +511,6 @@ async function contactAdmin(req, res) {
       return res.status(400).json({ error: 'subject and body are required' });
     }
 
-    const userRes = await pool.query(
-      `SELECT u.username, u.email,
-              p.first_name AS parent_first_name,
-              p.last_name AS parent_last_name,
-              STRING_AGG(DISTINCT c.class_name, ', ') AS class_names,
-              STRING_AGG(DISTINCT s.first_name || ' ' || s.last_name, ', ') AS children_names
-       FROM users u
-       LEFT JOIN parents p ON (
-         (u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email))
-         OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username)
-       )
-       LEFT JOIN parent_student ps ON ps.parent_id = p.parent_id
-       LEFT JOIN students s ON s.student_id = ps.student_id
-       LEFT JOIN enrollments e ON e.student_id = s.student_id AND e.status = 'active'
-       LEFT JOIN classes c ON c.class_id = e.class_id
-       WHERE u.user_id = $1
-       GROUP BY u.username, u.email, p.first_name, p.last_name`,
-      [req.user.user_id]
-    );
-    if (userRes.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    const sender = userRes.rows[0];
-
     const adminRes = await pool.query(
       `SELECT u.user_id
        FROM users u
@@ -548,23 +524,11 @@ async function contactAdmin(req, res) {
       return res.status(404).json({ error: 'No active admin account found' });
     }
 
-    const senderName = `${sender.parent_first_name || ''} ${sender.parent_last_name || ''}`.trim() || sender.username;
-    const classNames = sender.class_names || 'N/A';
-    const childNames = sender.children_names || 'N/A';
-    const decoratedBody =
-      `Parent Name: ${senderName}\n` +
-      `Parent First Name: ${sender.parent_first_name || 'N/A'}\n` +
-      `Class(es): ${classNames}\n` +
-      `Child(ren): ${childNames}\n` +
-      `Username: ${sender.username}\n` +
-      `Email: ${sender.email || 'N/A'}\n\n` +
-      body;
-
     const result = await pool.query(
       `INSERT INTO messages (sender_id, recipient_id, message_type, subject, body)
        VALUES ($1,$2,'private',$3,$4)
        RETURNING *`,
-      [req.user.user_id, adminRes.rows[0].user_id, `[Parent Contact] ${subject}`, decoratedBody]
+      [req.user.user_id, adminRes.rows[0].user_id, `[Parent Contact] ${subject}`, body]
     );
 
     res.status(201).json({ message: 'Message sent to admin', message_id: result.rows[0].message_id });

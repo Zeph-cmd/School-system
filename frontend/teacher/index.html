@@ -244,6 +244,18 @@
       return `<div style="display:flex; flex-wrap:wrap; gap:0.6rem; font-size:0.82rem; color:var(--text-light); margin:0.3rem 0;">${escHtml(text)}</div>`;
     }
 
+    function cleanLegacyParentBody(message) {
+      const raw = String(message?.body || '');
+      if (!raw || !message?.parent_full_name || !raw.includes('Parent Name:')) return raw;
+      const cleaned = raw.replace(
+        /^Parent Name:.*?Parent First Name:.*?Class\(es\):.*?Child\(ren\):.*?Username:.*?Email:\s*[^\s]+\s*/is,
+        ''
+      ).trim();
+      if (cleaned) return cleaned;
+      const parts = raw.split(/\n\s*\n/);
+      return parts.length > 1 ? parts.slice(1).join('\n\n').trim() : raw;
+    }
+
     function logout() {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
@@ -675,10 +687,11 @@
         const isMine = m.sender_id === myId;
         const time = m.created_at ? new Date(m.created_at).toLocaleString() : '';
         const senderLabel = m.parent_full_name || m.sender_name || 'User';
+        const cleanBody = cleanLegacyParentBody(m);
         return `<div class="msg-bubble ${isMine ? 'sent' : 'received'}">
           <div class="bubble-sender">${escHtml(senderLabel)}</div>
           ${parentContextRow(m)}
-          ${escHtml(m.body || '')}
+          ${escHtml(cleanBody)}
           <div class="bubble-time">${time}</div>
         </div>`;
       }).join('');

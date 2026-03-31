@@ -5,6 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Parent Dashboard - School Management</title>
   <link rel="stylesheet" href="/styles/main.css">
+  <style>
+    .fp-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 1rem;
+    }
+    .fp-modal-overlay.show { display: flex; }
+    .fp-modal {
+      width: 100%;
+      max-width: 430px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
+      padding: 1rem 1rem 1.2rem;
+    }
+    .fp-modal h3 { margin-bottom: 0.4rem; }
+    .fp-modal p { color: var(--text-light); margin-bottom: 0.9rem; font-size: 0.9rem; }
+    .fp-actions { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 0.8rem; }
+  </style>
 </head>
 <body>
   <div class="layout">
@@ -59,8 +83,8 @@
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label>Admission Number <span style="font-size:0.8rem;color:var(--text-light)">(Optional)</span></label>
-                <input type="text" id="addChildAdmission" placeholder="Example: ADM-2026-001">
+                <label>Admission Number <span style="font-size:0.8rem;color:var(--text-light)">(Required)</span></label>
+                <input type="text" id="addChildAdmission" placeholder="Example: ADM-2026-001" required>
               </div>
               <div class="form-group">
                 <label>Guardian Name (as school record)</label>
@@ -81,6 +105,7 @@
               <div class="form-group">
                 <label>Account Password</label>
                 <input type="password" id="addChildPassword" placeholder="Confirm with your account password">
+                <div style="margin-top:0.35rem; font-size:0.85rem;"><a href="#" onclick="openParentPanelForgotPassword(event)">Forgot password?</a></div>
               </div>
             </div>
             <button class="btn btn-success" onclick="submitAddChildRequest()">Submit Child Request</button>
@@ -208,6 +233,31 @@
         </div>
       </div>
     </main>
+  </div>
+
+  <div class="fp-modal-overlay" id="parentPanelForgotModal">
+    <div class="fp-modal">
+      <h3>Recover Account Password</h3>
+      <p>Verify with exact student details to generate a temporary password.</p>
+      <form id="parentPanelForgotForm">
+        <div class="form-group">
+          <label>Student First Name</label>
+          <input type="text" id="panelForgotFirstName" required>
+        </div>
+        <div class="form-group">
+          <label>Student Last Name</label>
+          <input type="text" id="panelForgotLastName" required>
+        </div>
+        <div class="form-group">
+          <label>Student Admission Number (ADM)</label>
+          <input type="text" id="panelForgotAdmission" required>
+        </div>
+        <div class="fp-actions">
+          <button type="button" class="btn" onclick="closeParentPanelForgotPassword()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Verify</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <script>
@@ -346,6 +396,22 @@
       }
     }
 
+    function openParentPanelForgotPassword(e) {
+      if (e) e.preventDefault();
+      const firstName = (document.getElementById('addChildFirstName').value || '').trim();
+      const lastName = (document.getElementById('addChildLastName').value || '').trim();
+      const admission = (document.getElementById('addChildAdmission').value || '').trim();
+      document.getElementById('panelForgotFirstName').value = firstName;
+      document.getElementById('panelForgotLastName').value = lastName;
+      document.getElementById('panelForgotAdmission').value = admission;
+      document.getElementById('parentPanelForgotModal').classList.add('show');
+      document.getElementById('panelForgotFirstName').focus();
+    }
+
+    function closeParentPanelForgotPassword() {
+      document.getElementById('parentPanelForgotModal').classList.remove('show');
+    }
+
     async function submitAddChildRequest() {
       const username = (document.getElementById('addChildUsername').value || '').trim();
       const email = (document.getElementById('addChildEmail').value || '').trim();
@@ -404,6 +470,40 @@
         showAlert('Connection error while submitting request', 'error');
       }
     }
+
+    document.getElementById('parentPanelForgotModal').addEventListener('click', (e) => {
+      if (e.target.id === 'parentPanelForgotModal') closeParentPanelForgotPassword();
+    });
+
+    document.getElementById('parentPanelForgotForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const first_name = (document.getElementById('panelForgotFirstName').value || '').trim();
+      const last_name = (document.getElementById('panelForgotLastName').value || '').trim();
+      const admission_number = (document.getElementById('panelForgotAdmission').value || '').trim();
+
+      if (!first_name || !last_name || !admission_number) {
+        showAlert('First name, last name, and admission number are required.', 'error');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/parent/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ first_name, last_name, admission_number }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showAlert(data.error || 'Verification failed. Please visit school for manual recovery.', 'error');
+          closeParentPanelForgotPassword();
+          return;
+        }
+        showAlert(`${escHtml(data.message || 'Identity verified.')} Username: ${escHtml(data.username || '-')} | Temporary Password: ${escHtml(data.temporary_password || '-')}`);
+        closeParentPanelForgotPassword();
+      } catch (err) {
+        showAlert('Connection error. Is the server running?', 'error');
+      }
+    });
 
     async function loadChildren() {
       const data = await api(`${API}/children`);
