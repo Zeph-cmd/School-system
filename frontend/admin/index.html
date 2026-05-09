@@ -59,6 +59,18 @@
           </div>
           <button class="btn btn-primary" onclick="changeAcademicYear()">Set Academic Year</button>
         </div>
+        <div class="record-card" style="margin-bottom:1rem; display:flex; align-items:center; justify-content:space-between; gap:1rem;">
+          <div>
+            <div style="font-weight:700;">Current Term</div>
+            <div id="currentTermText" style="color:var(--text-light); font-size:0.9rem;">Loading current term...</div>
+          </div>
+          <button class="btn btn-primary" onclick="changeCurrentTerm()">Set Current Term</button>
+        </div>
+        <div class="record-card" id="tuitionSummaryCard" style="margin-bottom:1rem;">
+          <div style="font-weight:700; margin-bottom:0.35rem;">Tuition Summary</div>
+          <div id="tuitionSummaryText" style="color:var(--text-light); font-size:0.9rem;">Loading tuition summary...</div>
+          <div id="tuitionSummaryStats" class="stats-grid" style="margin-top:0.75rem;"></div>
+        </div>
         <div class="stats-grid" id="statsGrid"></div>
       </div>
 
@@ -151,7 +163,7 @@
         </div>
         <div class="table-container">
           <table><thead><tr>
-            <th>ID</th><th>Class</th><th>Student</th><th>Description</th><th>Due</th><th>Paid</th><th>Status</th><th>Actions</th>
+            <th>ID</th><th>Class</th><th>Student</th><th>Type</th><th>Term</th><th>Description</th><th>Due</th><th>Paid</th><th>Status</th><th>Actions</th>
           </tr></thead><tbody id="feesTable"></tbody></table>
         </div>
       </div>
@@ -435,12 +447,6 @@
       return String(v || '').trim().toLowerCase();
     }
 
-    function toggleTuitionRow(studentId) {
-      const row = document.getElementById(`tuitionRow-${studentId}`);
-      if (!row) return;
-      row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
-    }
-
     // ── Dashboard ───────────────────────────────────
     async function loadDashboard() {
       const data = await api(`${API}/dashboard`);
@@ -448,6 +454,16 @@
       const grid = document.getElementById('statsGrid');
       const outstanding = (parseFloat(data.total_fees_due) - parseFloat(data.total_fees_paid)).toFixed(2);
       const tuitionOutstanding = (parseFloat(data.total_tuition_due || 0) - parseFloat(data.total_tuition_paid || 0)).toFixed(2);
+      const tuitionSummaryText = document.getElementById('tuitionSummaryText');
+      const tuitionSummaryStats = document.getElementById('tuitionSummaryStats');
+      if (tuitionSummaryText && tuitionSummaryStats) {
+        tuitionSummaryText.textContent = `Totals from all recorded tuition entries.`;
+        tuitionSummaryStats.innerHTML = `
+          <div class="stat-card"><div class="label">Total Due</div><div class="value">$${parseFloat(data.total_tuition_due || 0).toLocaleString()}</div></div>
+          <div class="stat-card green"><div class="label">Total Paid</div><div class="value">$${parseFloat(data.total_tuition_paid || 0).toLocaleString()}</div></div>
+          <div class="stat-card ${parseFloat(tuitionOutstanding) > 0 ? 'red' : 'green'}"><div class="label">Outstanding</div><div class="value">$${parseFloat(tuitionOutstanding).toLocaleString()}</div></div>
+        `;
+      }
       grid.innerHTML = `
         <div class="stat-card"><div class="label">Students</div><div class="value">${data.total_students}</div></div>
         <div class="stat-card"><div class="label">Teachers</div><div class="value">${data.total_teachers}</div></div>
@@ -463,6 +479,7 @@
       await loadGradeEditStatus();
       await loadRecoveryEmailStatus();
       await loadAcademicYearSettings();
+      await loadCurrentTermSettings();
     }
 
     async function loadGradeEditStatus() {
@@ -567,6 +584,37 @@
       }
     }
 
+    async function loadCurrentTermSettings() {
+      const data = await api(`${API}/current-term-settings`);
+      const textEl = document.getElementById('currentTermText');
+      if (!textEl) return;
+      if (!data || data.error) {
+        textEl.textContent = 'Unable to load current term settings.';
+        return;
+      }
+      textEl.textContent = `Current Term: ${data.current_term || 'Term 1'}`;
+    }
+
+    async function changeCurrentTerm() {
+      const current = await api(`${API}/current-term-settings`);
+      if (!current || current.error) {
+        showAlert(current?.error || 'Unable to load current term', 'error');
+        return;
+      }
+
+      const nextValue = prompt('Set current term (Term 1, Term 2, or Term 3):', current.current_term || 'Term 1');
+      if (nextValue === null) return;
+      const clean = String(nextValue || '').trim();
+
+      const res = await api(`${API}/current-term-settings`, 'PUT', { current_term: clean });
+      if (res && !res.error) {
+        showAlert(res.message || 'Current term updated');
+        loadCurrentTermSettings();
+      } else {
+        showAlert(res?.error || 'Failed to update current term', 'error');
+      }
+    }
+
     // ── Students ────────────────────────────────────
     async function loadStudents() {
       const data = await api(`${API}/students`);
@@ -588,9 +636,6 @@
 
     function renderStudentsTable(rows) {
       document.getElementById('studentsTable').innerHTML = rows.map(s => {
-        const tuitionDue = Number(s.tuition_amount_due || 0);
-        const tuitionPaid = Number(s.tuition_amount_paid || 0);
-        const tStatus = s.tuition_status || tuitionStatus(tuitionDue, tuitionPaid);
         const reclassActions = [
           `<a onclick="reclassifyStudent(${s.student_id}, 'promote')">Promote Next Class</a>`,
           `<a onclick="reclassifyStudent(${s.student_id}, 'demote')">Demote Previous Class</a>`,
@@ -600,17 +645,9 @@
           <td>${s.student_id}</td><td>${s.admission_number}</td>
           <td>${s.first_name} ${s.last_name}</td><td>${s.gender}</td>
           <td>${s.date_of_birth?.split('T')[0] || ''}</td><td>${escHtml(s.guardian_name) || '-'}</td>
-          <td><button class="btn btn-sm" onclick="toggleTuitionRow(${s.student_id})">View</button></td>
+          <td><button class="btn btn-sm" onclick="openStudentTuitionModal(${s.student_id})">View</button></td>
           <td>${statusBadge(s.status)}</td>
           <td>${editDropdown('students', s.student_id, { extraActions: reclassActions })}</td>
-        </tr>
-        <tr id="tuitionRow-${s.student_id}" style="display:none;background:#fafafa;">
-          <td colspan="9" style="padding:0.6rem 1rem;">
-            <strong>Tuition</strong> |
-            Due: $${tuitionDue.toFixed(2)} |
-            Paid: $${tuitionPaid.toFixed(2)} |
-            Status: ${tuitionStatusBadge(tStatus)}
-          </td>
         </tr>`;
       }).join('');
     }
@@ -676,7 +713,7 @@
       document.getElementById('classesTable').innerHTML = data.map(c => `<tr>
         <td>${c.class_id}</td><td>${c.class_name}</td><td>${c.class_code}</td>
         <td>${c.level}</td><td>${c.capacity || '-'}</td>
-        <td>${editDropdown('classes', c.class_id, { showDelete: false, extraActions: `<a onclick="viewClassStudentsById(${c.class_id})">View Class</a>` })}</td>
+        <td>${editDropdown('classes', c.class_id, { showDelete: false, extraActions: `<a onclick="viewClassStudentsById(${c.class_id})">View Class</a><a onclick="openSetTuitionModal(${c.class_id})">Set Tuition</a>` })}</td>
       </tr>`).join('');
     }
 
@@ -758,6 +795,163 @@
       document.getElementById('modalOverlay').classList.add('show');
     }
 
+    async function openSetTuitionModal(classId) {
+      const classInfo = dataCache.classes?.[classId];
+      const className = classInfo?.class_name || `Class ${classId}`;
+      const settings = await api(`${API}/academic-year-settings`);
+      const termSettings = await api(`${API}/current-term-settings`);
+      const defaults = {
+        year: settings?.current_academic_year || '',
+        term: termSettings?.current_term || 'Term 1',
+      };
+
+      const existing = await api(`${API}/classes/${classId}/tuition?academic_year=${encodeURIComponent(defaults.year)}&term=${encodeURIComponent(defaults.term)}`);
+      const existingRows = (existing || []).map(r => `<tr>
+        <td>${escHtml(r.billing_cycle)}</td>
+        <td>${escHtml(r.billing_period)}</td>
+        <td>$${parseFloat(r.amount_due || 0).toFixed(2)}</td>
+      </tr>`).join('') || '<tr><td colspan="3">No tuition set yet for selected year/term.</td></tr>';
+
+      const form = document.getElementById('modalForm');
+      document.getElementById('modalTitle').textContent = `Set Tuition - ${className}`;
+      form.innerHTML = `
+        <div class="alert" style="margin-bottom:0.8rem;">Set tuition for this class and term. Each entry applies only to students enrolled in this class for the selected year.</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Academic Year</label>
+            <input type="text" name="academic_year" value="${escHtml(defaults.year)}" placeholder="YYYY/YYYY" required>
+          </div>
+          <div class="form-group">
+            <label>Term</label>
+            <select name="term" required>
+              ${['Term 1','Term 2','Term 3'].map(t => `<option value="${t}" ${defaults.term === t ? 'selected' : ''}>${t}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Billing Cycle</label>
+            <select name="billing_cycle" required>
+              <option value="monthly">Monthly</option>
+              <option value="term">Term</option>
+              <option value="semester">Semester</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Amount Due</label>
+            <input type="number" name="amount_due" step="any" min="0" placeholder="0.00" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Billing Period Label</label>
+          <input type="text" name="billing_period" placeholder="e.g. May 2026, Term 1, Semester 1" required>
+        </div>
+        <div class="record-card" style="margin-top:0.75rem;">
+          <div style="font-weight:700; margin-bottom:0.5rem;">Existing Tuition For ${escHtml(defaults.year)} / ${escHtml(defaults.term)}</div>
+          <div class="table-container"><table><thead><tr><th>Cycle</th><th>Period</th><th>Amount Due</th></tr></thead><tbody>${existingRows}</tbody></table></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Tuition</button>
+        </div>
+      `;
+
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const payload = Object.fromEntries(new FormData(form));
+        const res = await api(`${API}/classes/${classId}/tuition`, 'POST', payload);
+        if (res && !res.error) {
+          showAlert(res.message || 'Class tuition saved successfully');
+          closeModal();
+          loadStudents();
+        } else {
+          showAlert(res?.error || 'Failed to save class tuition', 'error');
+        }
+      };
+
+      document.getElementById('modalOverlay').classList.add('show');
+    }
+
+    async function openStudentTuitionModal(studentId) {
+      const student = dataCache.students?.[studentId];
+      const studentName = student ? `${student.first_name} ${student.last_name}` : `Student ${studentId}`;
+      const settings = await api(`${API}/academic-year-settings`);
+      const termSettings = await api(`${API}/current-term-settings`);
+      const initialYear = settings?.current_academic_year || '';
+      const initialTerm = termSettings?.current_term || '';
+
+      const loadBreakdown = async (year, term) => {
+        const q = new URLSearchParams();
+        if (year) q.set('academic_year', year);
+        if (term) q.set('term', term);
+        return api(`${API}/students/${studentId}/tuition?${q.toString()}`);
+      };
+
+      const data = await loadBreakdown(initialYear, initialTerm);
+      const rows = data?.rows || [];
+      const totals = data?.totals || { amount_due: 0, amount_paid: 0, amount_outstanding: 0 };
+
+      const renderRows = (list) => list.map(r => `<tr>
+        <td>${escHtml(r.academic_year || '-')}</td>
+        <td>${escHtml(r.term || '-')}</td>
+        <td>${escHtml(r.billing_cycle || '-')}</td>
+        <td>${escHtml(r.billing_period || '-')}</td>
+        <td>$${parseFloat(r.amount_due || 0).toFixed(2)}</td>
+        <td>$${parseFloat(r.amount_paid || 0).toFixed(2)}</td>
+        <td>$${parseFloat(r.amount_outstanding || 0).toFixed(2)}</td>
+      </tr>`).join('') || '<tr><td colspan="7">No tuition records for selected filters.</td></tr>';
+
+      const form = document.getElementById('modalForm');
+      document.getElementById('modalTitle').textContent = `Tuition View - ${studentName}`;
+      form.innerHTML = `
+        <div class="alert" style="margin-bottom:0.8rem;">Shows tuition amounts recorded for the selected year and term.</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Academic Year</label>
+            <input type="text" id="tuitionViewYear" value="${escHtml(initialYear)}" placeholder="YYYY/YYYY">
+          </div>
+          <div class="form-group">
+            <label>Term</label>
+            <select id="tuitionViewTerm">
+              <option value="">All Terms</option>
+              ${['Term 1','Term 2','Term 3'].map(t => `<option value="${t}" ${initialTerm === t ? 'selected' : ''}>${t}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="btn-group" style="margin-bottom:0.6rem;">
+          <button type="button" class="btn btn-sm" id="reloadTuitionBtn">Apply Filter</button>
+        </div>
+        <div class="stats-grid" style="margin-bottom:0.75rem;">
+          <div class="stat-card"><div class="label">Total Due</div><div class="value">$${Number(totals.amount_due || 0).toLocaleString()}</div></div>
+          <div class="stat-card green"><div class="label">Total Paid</div><div class="value">$${Number(totals.amount_paid || 0).toLocaleString()}</div></div>
+          <div class="stat-card red"><div class="label">Outstanding</div><div class="value">$${Number(totals.amount_outstanding || 0).toLocaleString()}</div></div>
+        </div>
+        <div class="table-container"><table><thead><tr><th>Year</th><th>Term</th><th>Cycle</th><th>Period</th><th>Due</th><th>Paid</th><th>Outstanding</th></tr></thead><tbody id="studentTuitionRows">${renderRows(rows)}</tbody></table></div>
+        <div class="modal-actions">
+          <button type="button" class="btn" onclick="closeModal()">Close</button>
+        </div>
+      `;
+
+      document.getElementById('reloadTuitionBtn').onclick = async () => {
+        const year = document.getElementById('tuitionViewYear')?.value?.trim() || '';
+        const term = document.getElementById('tuitionViewTerm')?.value || '';
+        const refreshed = await loadBreakdown(year, term);
+        const refreshedRows = refreshed?.rows || [];
+        const refreshedTotals = refreshed?.totals || { amount_due: 0, amount_paid: 0, amount_outstanding: 0 };
+        document.getElementById('studentTuitionRows').innerHTML = renderRows(refreshedRows);
+
+        const cards = form.querySelectorAll('.stats-grid .value');
+        if (cards.length >= 3) {
+          cards[0].textContent = `$${Number(refreshedTotals.amount_due || 0).toLocaleString()}`;
+          cards[1].textContent = `$${Number(refreshedTotals.amount_paid || 0).toLocaleString()}`;
+          cards[2].textContent = `$${Number(refreshedTotals.amount_outstanding || 0).toLocaleString()}`;
+        }
+      };
+
+      form.onsubmit = (e) => e.preventDefault();
+      document.getElementById('modalOverlay').classList.add('show');
+    }
+
     // ── Subjects ────────────────────────────────────
     async function loadSubjects() {
       const data = await api(`${API}/subjects`);
@@ -791,7 +985,7 @@
       const cls = document.getElementById('feeClassFilter')?.value || '';
       const rows = (dataCache.feesList || []).filter(f => !cls || String(f.class_name || '') === String(cls));
       document.getElementById('feesTable').innerHTML = rows.map(f => `<tr>
-        <td>${f.fee_id}</td><td>${f.class_name || '-'}</td><td>${f.student_name}</td><td>${f.description || '-'}</td>
+        <td>${f.fee_id}</td><td>${f.class_name || '-'}</td><td>${f.student_name}</td><td>${escHtml(f.fee_type || 'general')}</td><td>${escHtml(f.term || '-')}</td><td>${f.description || '-'}</td>
         <td>$${parseFloat(f.amount_due).toFixed(2)}</td><td>$${parseFloat(f.amount_paid).toFixed(2)}</td>
         <td>${statusBadge(f.status)}</td>
         <td><button class="btn btn-success btn-sm" onclick="openUpdateModal('fees',${f.fee_id})">Update</button></td>
@@ -1108,6 +1302,8 @@
         url: `${API}/fees`,
         fields: [
           { name: 'admission_number', label: 'ADM Number', required: true, placeholder: 'e.g. ADM-2026-123456' },
+          { name: 'fee_type', label: 'Fee Type', type: 'select', options: ['general', 'tuition'], required: true },
+          { name: 'term', label: 'Term', type: 'select', options: ['Term 1', 'Term 2', 'Term 3'], required: true },
           { name: 'description', label: 'Description' },
           { name: 'amount_due', label: 'Amount Due', type: 'number', required: true },
           { name: 'due_date', label: 'Due Date', type: 'date' },

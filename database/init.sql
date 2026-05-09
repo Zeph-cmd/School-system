@@ -161,8 +161,26 @@ CREATE TABLE IF NOT EXISTS fees (
     amount_due NUMERIC NOT NULL DEFAULT 0,
     amount_paid NUMERIC DEFAULT 0,
     due_date DATE,
+    fee_type VARCHAR(20) NOT NULL DEFAULT 'general',
+    term VARCHAR(20),
+    billing_cycle VARCHAR(20),
+    billing_period VARCHAR(60),
     status VARCHAR(20) DEFAULT 'unpaid',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Class-level tuition templates (applies tuition fees to members of a class)
+CREATE TABLE IF NOT EXISTS class_tuition_templates (
+    template_id SERIAL PRIMARY KEY,
+    class_id INT NOT NULL REFERENCES classes(class_id) ON DELETE CASCADE,
+    academic_year VARCHAR(20) NOT NULL,
+    term VARCHAR(20) NOT NULL,
+    billing_cycle VARCHAR(20) NOT NULL,
+    billing_period VARCHAR(60) NOT NULL,
+    amount_due NUMERIC NOT NULL DEFAULT 0,
+    created_by INT REFERENCES users(user_id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (class_id, academic_year, term, billing_cycle, billing_period)
 );
 
 -- Grades

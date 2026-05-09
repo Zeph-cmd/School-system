@@ -17,6 +17,8 @@ router.get('/recovery-email', admin.getAdminRecoveryEmail);
 router.put('/recovery-email', admin.setAdminRecoveryEmail);
 router.get('/academic-year-settings', admin.getAcademicYearSettings);
 router.put('/academic-year-settings', admin.setAcademicYearSettings);
+router.get('/current-term-settings', admin.getCurrentTermSettings);
+router.put('/current-term-settings', admin.setCurrentTermSettings);
 
 // Students CRUD
 router.get('/students', admin.getStudents);
@@ -41,6 +43,8 @@ router.delete('/parents/:id', admin.deleteParent);
 // Classes CRUD
 router.get('/classes', admin.getClasses);
 router.get('/classes/student-lookup', admin.lookupStudentClass);
+router.get('/classes/:id/tuition', admin.getClassTuitionTemplates);
+router.post('/classes/:id/tuition', admin.setClassTuition);
 router.post('/classes', admin.createClass);
 router.put('/classes/:id', admin.updateClass);
 router.delete('/classes/:id', admin.deleteClass);
@@ -61,6 +65,9 @@ router.delete('/enrollments/:id', admin.deleteEnrollment);
 router.get('/fees', admin.getFees);
 router.post('/fees', admin.createFee);
 router.put('/fees/:id', admin.updateFee);
+
+// Student tuition breakdown
+router.get('/students/:id/tuition', admin.getStudentTuitionBreakdown);
 
 // Teaching Assignments
 router.get('/assignments', admin.getAssignments);

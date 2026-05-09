@@ -452,7 +452,14 @@ async function login(req, res) {
       { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
     );
 
-    res.json({ token, user: { user_id: user.user_id, username: user.username, roles } });
+    res.json({
+      token,
+      user: {
+        user_id: user.user_id,
+        username: user.username,
+        roles,
+      },
+    });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Login failed' });
@@ -713,4 +720,11 @@ async function me(req, res) {
   }
 }
 
-module.exports = { register, login, me, adminForgotPassword, forgotCredentials, parentForgotPassword };
+module.exports = {
+  register,
+  login,
+  me,
+  adminForgotPassword,
+  forgotCredentials,
+  parentForgotPassword,
+};

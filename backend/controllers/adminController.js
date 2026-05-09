@@ -8,6 +8,7 @@ function defaultAcademicYear() {
 }
 
 const ALLOWED_TERMS = ['Term 1', 'Term 2', 'Term 3'];
+const ALLOWED_BILLING_CYCLES = ['monthly', 'term', 'semester'];
 
 function parseAcademicYearRange(value) {
   const raw = String(value || '').trim();
@@ -31,6 +32,28 @@ function normalizeTerm(value) {
   if (term === 'term 2' || term === '2' || term === 't2' || term === 'second') return 'Term 2';
   if (term === 'term 3' || term === '3' || term === 't3' || term === 'third') return 'Term 3';
   return null;
+}
+
+function normalizeBillingCycle(value) {
+  const cycle = String(value || '').trim().toLowerCase();
+  if (cycle === 'month' || cycle === 'monthly') return 'monthly';
+  if (cycle === 'term' || cycle === 'terms') return 'term';
+  if (cycle === 'semester' || cycle === 'semesters' || cycle === 'sem') return 'semester';
+  return null;
+}
+
+function toMoney(value, fallback = 0) {
+  if (value === undefined || value === null || value === '') return Number(fallback || 0);
+  const n = Number(value);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function deriveFeeStatus(amountDue, amountPaid) {
+  const due = Number(amountDue || 0);
+  const paid = Number(amountPaid || 0);
+  if (paid <= 0) return 'unpaid';
+  if (paid >= due) return 'paid';
+  return 'partial';
 }
 
 async function ensureSystemSettingsTable() {
@@ -61,6 +84,11 @@ async function ensureSystemSettingsTable() {
      ON CONFLICT (setting_key) DO NOTHING`,
     [defaultAcademicYear()]
   );
+  await pool.query(
+    `INSERT INTO system_settings (setting_key, setting_value)
+     VALUES ('current_term', 'Term 1')
+     ON CONFLICT (setting_key) DO NOTHING`
+  );
 }
 
 async function getCurrentAcademicYearSetting() {
@@ -78,10 +106,12 @@ async function getCurrentAcademicYearSetting() {
 async function getAcademicYearSettings(req, res) {
   try {
     const currentAcademicYear = await getCurrentAcademicYearSetting();
+    const currentTerm = await getCurrentTermSetting();
     res.json({
       current_academic_year: currentAcademicYear,
       next_academic_year: nextAcademicYear(currentAcademicYear),
       terms: ALLOWED_TERMS,
+      current_term: currentTerm,
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch academic year settings' });
@@ -113,10 +143,85 @@ async function setAcademicYearSettings(req, res) {
       current_academic_year: currentAcademicYear,
       next_academic_year: nextAcademicYear(currentAcademicYear),
       terms: ALLOWED_TERMS,
+      current_term: await getCurrentTermSetting(),
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update academic year settings' });
   }
+}
+
+async function getCurrentTermSetting() {
+  await ensureSystemSettingsTable();
+  const result = await pool.query(
+    `SELECT setting_value
+     FROM system_settings
+     WHERE setting_key = 'current_term'
+     LIMIT 1`
+  );
+  const normalized = normalizeTerm(result.rows[0]?.setting_value);
+  return normalized || 'Term 1';
+}
+
+async function getCurrentTermSettings(req, res) {
+  try {
+    const currentTerm = await getCurrentTermSetting();
+    res.json({ current_term: currentTerm, terms: ALLOWED_TERMS });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch current term settings' });
+  }
+}
+
+async function setCurrentTermSettings(req, res) {
+  try {
+    const normalizedTerm = normalizeTerm(req.body.current_term);
+    if (!normalizedTerm) {
+      return res.status(400).json({ error: 'current_term must be one of: Term 1, Term 2, Term 3' });
+    }
+
+    await ensureSystemSettingsTable();
+    await pool.query(
+      `UPDATE system_settings
+       SET setting_value = $1, updated_at = NOW(), updated_by = $2
+       WHERE setting_key = 'current_term'`,
+      [normalizedTerm, req.user.user_id]
+    );
+
+    await req.audit('UPDATE', 'system_settings', null, null, {
+      setting_key: 'current_term',
+      setting_value: normalizedTerm,
+    });
+
+    res.json({
+      message: 'Current term updated successfully.',
+      current_term: normalizedTerm,
+      terms: ALLOWED_TERMS,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update current term settings' });
+  }
+}
+
+async function ensureClassTuitionStructures() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS class_tuition_templates (
+      template_id SERIAL PRIMARY KEY,
+      class_id INT NOT NULL REFERENCES classes(class_id) ON DELETE CASCADE,
+      academic_year VARCHAR(20) NOT NULL,
+      term VARCHAR(20) NOT NULL,
+      billing_cycle VARCHAR(20) NOT NULL,
+      billing_period VARCHAR(60) NOT NULL,
+      amount_due NUMERIC NOT NULL DEFAULT 0,
+      created_by INT REFERENCES users(user_id),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (class_id, academic_year, term, billing_cycle, billing_period)
+    )
+  `);
+
+  await pool.query("ALTER TABLE fees ADD COLUMN IF NOT EXISTS fee_type VARCHAR(20) NOT NULL DEFAULT 'general'");
+  await pool.query('ALTER TABLE fees ADD COLUMN IF NOT EXISTS term VARCHAR(20)');
+  await pool.query('ALTER TABLE fees ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20)');
+  await pool.query('ALTER TABLE fees ADD COLUMN IF NOT EXISTS billing_period VARCHAR(60)');
+  await pool.query("UPDATE fees SET fee_type = 'general' WHERE fee_type IS NULL OR TRIM(fee_type) = ''");
 }
 
 async function ensureGradeChangeRequestsTable() {
@@ -1103,6 +1208,208 @@ async function deleteClass(req, res) {
   }
 }
 
+async function getClassTuitionTemplates(req, res) {
+  try {
+    await ensureClassTuitionStructures();
+    const { id } = req.params;
+    const academicYear = parseAcademicYearRange(req.query.academic_year)?.start
+      ? String(req.query.academic_year).trim()
+      : null;
+    const term = req.query.term ? normalizeTerm(req.query.term) : null;
+
+    const params = [id];
+    let where = 'WHERE t.class_id = $1';
+    if (academicYear) {
+      params.push(academicYear);
+      where += ` AND t.academic_year = $${params.length}`;
+    }
+    if (term) {
+      params.push(term);
+      where += ` AND t.term = $${params.length}`;
+    }
+
+    const result = await pool.query(
+      `SELECT t.*, c.class_name, c.class_code
+       FROM class_tuition_templates t
+       JOIN classes c ON c.class_id = t.class_id
+       ${where}
+       ORDER BY t.academic_year DESC, t.term, t.billing_cycle, t.billing_period`,
+      params
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch class tuition templates' });
+  }
+}
+
+async function setClassTuition(req, res) {
+  try {
+    await ensureClassTuitionStructures();
+    const { id } = req.params;
+    const billingCycle = normalizeBillingCycle(req.body.billing_cycle);
+    const billingPeriod = String(req.body.billing_period || '').trim();
+    const amountDue = toMoney(req.body.amount_due);
+    const academicYear = String(req.body.academic_year || '').trim() || await getCurrentAcademicYearSetting();
+    const normalizedTerm = normalizeTerm(req.body.term) || await getCurrentTermSetting();
+
+    if (!billingCycle) {
+      return res.status(400).json({ error: 'billing_cycle must be one of: monthly, term, semester' });
+    }
+    if (!billingPeriod) {
+      return res.status(400).json({ error: 'billing_period is required' });
+    }
+    if (!parseAcademicYearRange(academicYear)) {
+      return res.status(400).json({ error: 'academic_year must be in format YYYY/YYYY' });
+    }
+    if (Number.isNaN(amountDue) || amountDue < 0) {
+      return res.status(400).json({ error: 'amount_due must be a valid non-negative number' });
+    }
+
+    const classRes = await pool.query('SELECT class_id, class_name FROM classes WHERE class_id = $1 LIMIT 1', [id]);
+    if (classRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Class not found' });
+    }
+
+    const templateRes = await pool.query(
+      `INSERT INTO class_tuition_templates (class_id, academic_year, term, billing_cycle, billing_period, amount_due, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (class_id, academic_year, term, billing_cycle, billing_period)
+       DO UPDATE SET amount_due = EXCLUDED.amount_due, created_by = EXCLUDED.created_by
+       RETURNING *`,
+      [id, academicYear, normalizedTerm, billingCycle, billingPeriod, amountDue, req.user.user_id]
+    );
+
+    const enrollments = await pool.query(
+      `SELECT enrollment_id
+       FROM enrollments
+       WHERE class_id = $1 AND academic_year = $2 AND status = 'active'`,
+      [id, academicYear]
+    );
+
+    let affected = 0;
+    for (const row of enrollments.rows) {
+      const existingFee = await pool.query(
+        `SELECT fee_id, amount_paid
+         FROM fees
+         WHERE enrollment_id = $1
+           AND fee_type = 'tuition'
+           AND COALESCE(term, '') = COALESCE($2, '')
+           AND COALESCE(billing_cycle, '') = COALESCE($3, '')
+           AND COALESCE(billing_period, '') = COALESCE($4, '')
+         ORDER BY fee_id DESC
+         LIMIT 1`,
+        [row.enrollment_id, normalizedTerm, billingCycle, billingPeriod]
+      );
+
+      const description = `Tuition - ${billingPeriod}`;
+
+      if (existingFee.rows.length > 0) {
+        const fee = existingFee.rows[0];
+        const paid = Number(fee.amount_paid || 0);
+        const status = deriveFeeStatus(amountDue, paid);
+        await pool.query(
+          `UPDATE fees
+           SET description = $1,
+               amount_due = $2,
+               status = $3,
+               fee_type = 'tuition',
+               term = $4,
+               billing_cycle = $5,
+               billing_period = $6
+           WHERE fee_id = $7`,
+          [description, amountDue, status, normalizedTerm, billingCycle, billingPeriod, fee.fee_id]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO fees (enrollment_id, description, amount_due, amount_paid, status, fee_type, term, billing_cycle, billing_period)
+           VALUES ($1, $2, $3, 0, 'unpaid', 'tuition', $4, $5, $6)`,
+          [row.enrollment_id, description, amountDue, normalizedTerm, billingCycle, billingPeriod]
+        );
+      }
+      affected += 1;
+    }
+
+    await req.audit('UPDATE', 'class_tuition_templates', templateRes.rows[0].template_id, null, {
+      class_id: Number(id),
+      academic_year: academicYear,
+      term: normalizedTerm,
+      billing_cycle: billingCycle,
+      billing_period: billingPeriod,
+      amount_due: amountDue,
+      affected_enrollments: affected,
+    });
+
+    res.json({
+      message: `Tuition setting saved for ${classRes.rows[0].class_name}.`,
+      template: templateRes.rows[0],
+      affected_enrollments: affected,
+    });
+  } catch (err) {
+    console.error('setClassTuition error:', err);
+    res.status(500).json({ error: 'Failed to set class tuition' });
+  }
+}
+
+async function getStudentTuitionBreakdown(req, res) {
+  try {
+    await ensureClassTuitionStructures();
+    const { id } = req.params;
+    const academicYear = parseAcademicYearRange(req.query.academic_year)?.start
+      ? String(req.query.academic_year).trim()
+      : null;
+    const term = req.query.term ? normalizeTerm(req.query.term) : null;
+
+    const studentRes = await pool.query('SELECT student_id FROM students WHERE student_id = $1 LIMIT 1', [id]);
+    if (studentRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    const params = [id];
+    let where = "WHERE e.student_id = $1 AND f.fee_type = 'tuition'";
+    if (academicYear) {
+      params.push(academicYear);
+      where += ` AND e.academic_year = $${params.length}`;
+    }
+    if (term) {
+      params.push(term);
+      where += ` AND f.term = $${params.length}`;
+    }
+
+    const result = await pool.query(
+      `SELECT
+         f.fee_id,
+         f.description,
+         f.amount_due,
+         f.amount_paid,
+         GREATEST(COALESCE(f.amount_due, 0) - COALESCE(f.amount_paid, 0), 0) AS amount_outstanding,
+         f.status,
+         f.billing_cycle,
+         f.billing_period,
+         f.term,
+         e.academic_year,
+         c.class_name
+       FROM fees f
+       JOIN enrollments e ON e.enrollment_id = f.enrollment_id
+       JOIN classes c ON c.class_id = e.class_id
+       ${where}
+       ORDER BY e.academic_year DESC, f.term, f.billing_cycle, f.billing_period, f.fee_id`,
+      params
+    );
+
+    const totals = result.rows.reduce((acc, row) => {
+      acc.amount_due += Number(row.amount_due || 0);
+      acc.amount_paid += Number(row.amount_paid || 0);
+      acc.amount_outstanding += Number(row.amount_outstanding || 0);
+      return acc;
+    }, { amount_due: 0, amount_paid: 0, amount_outstanding: 0 });
+
+    res.json({ rows: result.rows, totals });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch student tuition breakdown' });
+  }
+}
+
 async function lookupStudentClass(req, res) {
   try {
     const q = String(req.query.q || '').trim();
@@ -1299,14 +1606,31 @@ async function updateEnrollment(req, res) {
 // ─── FEES ─────────────────────────────────────────────────────────
 async function getFees(req, res) {
   try {
-    const result = await pool.query(`
-      SELECT f.*, s.first_name || ' ' || s.last_name AS student_name, c.class_name
-      FROM fees f
-      JOIN enrollments e ON f.enrollment_id = e.enrollment_id
-      JOIN students s ON e.student_id = s.student_id
-      JOIN classes c ON e.class_id = c.class_id
-      ORDER BY f.fee_id
-    `);
+    await ensureClassTuitionStructures();
+    const term = req.query.term ? normalizeTerm(req.query.term) : null;
+    const feeType = String(req.query.fee_type || '').trim().toLowerCase() || null;
+
+    const params = [];
+    let where = 'WHERE 1=1';
+    if (term) {
+      params.push(term);
+      where += ` AND f.term = $${params.length}`;
+    }
+    if (feeType && ['general', 'tuition'].includes(feeType)) {
+      params.push(feeType);
+      where += ` AND f.fee_type = $${params.length}`;
+    }
+
+    const result = await pool.query(
+      `SELECT f.*, s.first_name || ' ' || s.last_name AS student_name, c.class_name, e.academic_year
+       FROM fees f
+       JOIN enrollments e ON f.enrollment_id = e.enrollment_id
+       JOIN students s ON e.student_id = s.student_id
+       JOIN classes c ON e.class_id = c.class_id
+       ${where}
+       ORDER BY f.fee_id`,
+      params
+    );
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch fees' });
@@ -1315,9 +1639,16 @@ async function getFees(req, res) {
 
 async function createFee(req, res) {
   try {
-    const { enrollment_id, admission_number, description, amount_due, due_date } = req.body;
+    await ensureClassTuitionStructures();
+    const { enrollment_id, admission_number, description, amount_due, due_date, term, fee_type } = req.body;
     if ((!enrollment_id && !admission_number) || !amount_due) {
       return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const normalizedTerm = normalizeTerm(term) || await getCurrentTermSetting();
+    const feeType = String(fee_type || 'general').trim().toLowerCase();
+    if (!['general', 'tuition'].includes(feeType)) {
+      return res.status(400).json({ error: 'fee_type must be either general or tuition' });
     }
 
     let targetEnrollmentId = enrollment_id;
@@ -1342,8 +1673,8 @@ async function createFee(req, res) {
     }
 
     const result = await pool.query(
-      'INSERT INTO fees (enrollment_id, description, amount_due, due_date) VALUES ($1,$2,$3,$4) RETURNING *',
-      [targetEnrollmentId, description || null, amount_due, due_date || null]
+      'INSERT INTO fees (enrollment_id, description, amount_due, due_date, fee_type, term) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
+      [targetEnrollmentId, description || null, amount_due, due_date || null, feeType, normalizedTerm]
     );
     await req.audit('CREATE', 'fees', result.rows[0].fee_id, null, result.rows[0]);
     res.status(201).json(result.rows[0]);
@@ -2447,10 +2778,12 @@ async function getParentUsers(req, res) {
 module.exports = {
   getDashboard, getGradeEditStatus, setGradeEditStatus, getAdminRecoveryEmail, setAdminRecoveryEmail,
   getAcademicYearSettings, setAcademicYearSettings,
+  getCurrentTermSettings, setCurrentTermSettings,
   getStudents, createStudent, updateStudent, deleteStudent, promoteStudent, reclassifyStudent,
   getTeachers, createTeacher, updateTeacher, deleteTeacher,
   getParents, createParent, updateParent, deleteParent,
   getClasses, createClass, updateClass, deleteClass, lookupStudentClass,
+  getClassTuitionTemplates, setClassTuition, getStudentTuitionBreakdown,
   getSubjects, createSubject, updateSubject, deleteSubject,
   getEnrollments, createEnrollment, updateEnrollment, deleteEnrollment,
   getFees, createFee, updateFee,

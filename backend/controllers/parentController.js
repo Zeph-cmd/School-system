@@ -13,6 +13,22 @@ function parseAcademicYearRange(value) {
   return raw;
 }
 
+function normalizeTerm(value) {
+  const term = String(value || '').trim().toLowerCase();
+  if (!term) return null;
+  if (term === 'term 1' || term === '1' || term === 't1' || term === 'first') return 'Term 1';
+  if (term === 'term 2' || term === '2' || term === 't2' || term === 'second') return 'Term 2';
+  if (term === 'term 3' || term === '3' || term === 't3' || term === 'third') return 'Term 3';
+  return null;
+}
+
+async function ensureFeeColumns() {
+  await pool.query("ALTER TABLE fees ADD COLUMN IF NOT EXISTS fee_type VARCHAR(20) NOT NULL DEFAULT 'general'");
+  await pool.query('ALTER TABLE fees ADD COLUMN IF NOT EXISTS term VARCHAR(20)');
+  await pool.query('ALTER TABLE fees ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20)');
+  await pool.query('ALTER TABLE fees ADD COLUMN IF NOT EXISTS billing_period VARCHAR(60)');
+}
+
 async function getParentMessagingState(userId) {
   const parentRes = await pool.query(
     `SELECT p.parent_id, p.status
@@ -128,8 +144,13 @@ async function getMyChildren(req, res) {
 // GET /api/parent/fees?student_id=X - fees for a child
 async function getChildFees(req, res) {
   try {
+    await ensureFeeColumns();
     const { student_id } = req.query;
     const academicYear = parseAcademicYearRange(req.query.academic_year);
+    const term = normalizeTerm(req.query.term);
+    if (req.query.term && !term) {
+      return res.status(400).json({ error: 'term must be one of: Term 1, Term 2, Term 3' });
+    }
     if (!student_id) {
       return res.status(400).json({ error: 'student_id required' });
     }
@@ -149,14 +170,19 @@ async function getChildFees(req, res) {
     }
 
     const result = await pool.query(`
-      SELECT f.*, c.class_name, e.academic_year
+      SELECT f.*, c.class_name, e.academic_year,
+             COALESCE(f.fee_type, 'general') AS fee_type,
+             f.term,
+             f.billing_cycle,
+             f.billing_period
       FROM fees f
       JOIN enrollments e ON f.enrollment_id = e.enrollment_id
       JOIN classes c ON e.class_id = c.class_id
       WHERE e.student_id = $1
         AND ($2::text IS NULL OR e.academic_year = $2)
+        AND ($3::text IS NULL OR f.term = $3)
       ORDER BY f.created_at DESC
-    `, [student_id, academicYear]);
+    `, [student_id, academicYear, term]);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch fees' });
