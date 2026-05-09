@@ -113,7 +113,7 @@
         </div>
         <div class="table-container">
           <table><thead><tr>
-            <th>Adm No</th><th>Name</th><th>Gender</th><th>DOB</th><th>Current Class</th><th>Current Year</th><th>Relationship</th><th>Tuition Due</th><th>Tuition Paid</th><th>Tuition Status</th><th>Status</th>
+            <th>Adm No</th><th>Name</th><th>Gender</th><th>DOB</th><th>Current Class</th><th>Current Year</th><th>Relationship</th><th>Status</th>
           </tr></thead><tbody id="childrenTable"></tbody></table>
         </div>
       </div>
@@ -323,16 +323,6 @@
                   status === 'absent' ? 'badge-absent' :
                   status === 'unpaid' ? 'badge-unpaid' : 'badge-inactive';
       return `<span class="badge ${cls}">${status}</span>`;
-    }
-
-    function tuitionStatusBadge(status) {
-      const s = status || 'null';
-      const cls = s === 'fully_paid'
-        ? 'badge-tuition-full'
-        : s === 'partial'
-          ? 'badge-tuition-partial'
-          : 'badge-tuition-null';
-      return `<span class="badge ${cls}">${s}</span>`;
     }
 
     // Navigation
@@ -545,11 +535,8 @@
         <td>${c.gender}</td><td>${c.date_of_birth?.split('T')[0] || ''}</td>
         <td>${c.current_class_name || '-'}</td><td>${c.current_academic_year || '-'}</td>
         <td>${c.relationship || '-'}</td>
-        <td>$${parseFloat(c.tuition_amount_due || 0).toFixed(2)}</td>
-        <td>$${parseFloat(c.tuition_amount_paid || 0).toFixed(2)}</td>
-        <td>${tuitionStatusBadge(c.tuition_status)}</td>
         <td>${statusBadge(c.status)}</td>
-      </tr>`).join('') || '<tr><td colspan="11">No children linked. Contact school admin.</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="8">No children linked. Contact school admin.</td></tr>';
 
       // Populate all child select dropdowns
       const opts = myChildren.map(c => `<option value="${c.student_id}">${c.first_name} ${c.last_name}</option>`).join('');

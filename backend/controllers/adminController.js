@@ -308,6 +308,7 @@ async function generateUniqueCode({ prefix, table, column, suffixPrefix = '', di
 // ─── Dashboard Stats ────────────────────────────────────────────
 async function getDashboard(req, res) {
   try {
+    await ensureClassTuitionStructures();
     const stats = await pool.query(`
       SELECT 
         (SELECT COUNT(*) FROM students) AS total_students,
@@ -318,8 +319,8 @@ async function getDashboard(req, res) {
         (SELECT COUNT(*) FROM enrollments WHERE status = 'active') AS active_enrollments,
         (SELECT COALESCE(SUM(amount_due), 0) FROM fees) AS total_fees_due,
         (SELECT COALESCE(SUM(amount_paid), 0) FROM fees) AS total_fees_paid,
-        (SELECT COALESCE(SUM(tuition_amount_due), 0) FROM students) AS total_tuition_due,
-        (SELECT COALESCE(SUM(tuition_amount_paid), 0) FROM students) AS total_tuition_paid
+        (SELECT COALESCE(SUM(amount_due), 0) FROM fees WHERE fee_type = 'tuition') AS total_tuition_due,
+        (SELECT COALESCE(SUM(amount_paid), 0) FROM fees WHERE fee_type = 'tuition') AS total_tuition_paid
     `);
     res.json(stats.rows[0]);
   } catch (err) {
@@ -479,18 +480,10 @@ async function createStudent(req, res) {
       gender,
       date_of_birth,
       guardian_name,
-      tuition_amount_due,
-      tuition_amount_paid,
       starting_class_id,
     } = req.body;
-    if (!first_name || !last_name || !gender || !date_of_birth || !guardian_name || !starting_class_id || tuition_amount_due === undefined || tuition_amount_due === '' || tuition_amount_paid === undefined || tuition_amount_paid === '') {
+    if (!first_name || !last_name || !gender || !date_of_birth || !guardian_name || !starting_class_id) {
       return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    const tuitionDue = tuition_amount_due === undefined || tuition_amount_due === '' ? 0 : Number(tuition_amount_due);
-    const tuitionPaid = tuition_amount_paid === undefined || tuition_amount_paid === '' ? 0 : Number(tuition_amount_paid);
-    if (Number.isNaN(tuitionDue) || Number.isNaN(tuitionPaid) || tuitionDue < 0 || tuitionPaid < 0) {
-      return res.status(400).json({ error: 'Tuition values must be valid non-negative numbers' });
     }
 
     let startClassId = null;
@@ -525,8 +518,8 @@ async function createStudent(req, res) {
         date_of_birth,
         null,
         null,
-        tuitionDue,
-        tuitionPaid,
+        0,
+        0,
       ]
     );
     await req.audit('CREATE', 'students', result.rows[0].student_id, null, result.rows[0]);
@@ -593,28 +586,15 @@ async function updateStudent(req, res) {
       email,
       phone,
       status,
-      tuition_amount_due,
-      tuition_amount_paid,
     } = req.body;
     const old = await pool.query('SELECT * FROM students WHERE student_id = $1', [id]);
     if (old.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
     const prev = old.rows[0];
 
-    const tuitionDue = tuition_amount_due === undefined || tuition_amount_due === ''
-      ? prev.tuition_amount_due
-      : Number(tuition_amount_due);
-    const tuitionPaid = tuition_amount_paid === undefined || tuition_amount_paid === ''
-      ? prev.tuition_amount_paid
-      : Number(tuition_amount_paid);
-    if (Number.isNaN(tuitionDue) || Number.isNaN(tuitionPaid) || tuitionDue < 0 || tuitionPaid < 0) {
-      return res.status(400).json({ error: 'Tuition values must be valid non-negative numbers' });
-    }
-
     const result = await pool.query(
       `UPDATE students SET admission_number=$1, first_name=$2, last_name=$3, other_name=$4,
-       gender=$5, date_of_birth=$6, email=$7, phone=$8, status=$9,
-       tuition_amount_due=$10, tuition_amount_paid=$11
-       WHERE student_id=$12 RETURNING *`,
+       gender=$5, date_of_birth=$6, email=$7, phone=$8, status=$9
+       WHERE student_id=$10 RETURNING *`,
       [
         admission_number ?? prev.admission_number,
         first_name ?? prev.first_name,
@@ -625,8 +605,6 @@ async function updateStudent(req, res) {
         email ?? prev.email,
         phone ?? prev.phone,
         status ?? prev.status,
-        tuitionDue,
-        tuitionPaid,
         id,
       ]
     );
@@ -1252,6 +1230,8 @@ async function setClassTuition(req, res) {
     const amountDue = toMoney(req.body.amount_due);
     const academicYear = String(req.body.academic_year || '').trim() || await getCurrentAcademicYearSetting();
     const normalizedTerm = normalizeTerm(req.body.term) || await getCurrentTermSetting();
+    const templateId = req.body.template_id ? Number(req.body.template_id) : null;
+    const confirmReplace = [true, 'true', '1', 1].includes(req.body.confirm_replace);
 
     if (!billingCycle) {
       return res.status(400).json({ error: 'billing_cycle must be one of: monthly, term, semester' });
@@ -1271,14 +1251,68 @@ async function setClassTuition(req, res) {
       return res.status(404).json({ error: 'Class not found' });
     }
 
-    const templateRes = await pool.query(
-      `INSERT INTO class_tuition_templates (class_id, academic_year, term, billing_cycle, billing_period, amount_due, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (class_id, academic_year, term, billing_cycle, billing_period)
-       DO UPDATE SET amount_due = EXCLUDED.amount_due, created_by = EXCLUDED.created_by
-       RETURNING *`,
-      [id, academicYear, normalizedTerm, billingCycle, billingPeriod, amountDue, req.user.user_id]
+    let previousKey = null;
+    if (templateId) {
+      const existingTemplate = await pool.query(
+        'SELECT * FROM class_tuition_templates WHERE template_id = $1 AND class_id = $2 LIMIT 1',
+        [templateId, id]
+      );
+      if (existingTemplate.rows.length === 0) {
+        return res.status(404).json({ error: 'Tuition template not found for update' });
+      }
+      previousKey = {
+        academic_year: existingTemplate.rows[0].academic_year,
+        term: existingTemplate.rows[0].term,
+        billing_cycle: existingTemplate.rows[0].billing_cycle,
+        billing_period: existingTemplate.rows[0].billing_period,
+      };
+    }
+
+    const duplicateTemplate = await pool.query(
+      `SELECT template_id, amount_due
+       FROM class_tuition_templates
+       WHERE class_id = $1
+         AND academic_year = $2
+         AND term = $3
+         AND billing_cycle = $4
+         AND billing_period = $5
+         AND ($6::int IS NULL OR template_id <> $6)
+       LIMIT 1`,
+      [id, academicYear, normalizedTerm, billingCycle, billingPeriod, templateId]
     );
+
+    if (duplicateTemplate.rows.length > 0 && !confirmReplace) {
+      return res.status(409).json({
+        error: 'A tuition form already exists for this class, year, term, cycle, and period.',
+        needs_confirmation: true,
+        existing_template: duplicateTemplate.rows[0],
+      });
+    }
+
+    let templateRes;
+    if (templateId) {
+      templateRes = await pool.query(
+        `UPDATE class_tuition_templates
+         SET academic_year = $1,
+             term = $2,
+             billing_cycle = $3,
+             billing_period = $4,
+             amount_due = $5,
+             created_by = $6
+         WHERE template_id = $7
+         RETURNING *`,
+        [academicYear, normalizedTerm, billingCycle, billingPeriod, amountDue, req.user.user_id, templateId]
+      );
+    } else {
+      templateRes = await pool.query(
+        `INSERT INTO class_tuition_templates (class_id, academic_year, term, billing_cycle, billing_period, amount_due, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (class_id, academic_year, term, billing_cycle, billing_period)
+         DO UPDATE SET amount_due = EXCLUDED.amount_due, created_by = EXCLUDED.created_by
+         RETURNING *`,
+        [id, academicYear, normalizedTerm, billingCycle, billingPeriod, amountDue, req.user.user_id]
+      );
+    }
 
     const enrollments = await pool.query(
       `SELECT enrollment_id
@@ -1299,7 +1333,12 @@ async function setClassTuition(req, res) {
            AND COALESCE(billing_period, '') = COALESCE($4, '')
          ORDER BY fee_id DESC
          LIMIT 1`,
-        [row.enrollment_id, normalizedTerm, billingCycle, billingPeriod]
+        [
+          row.enrollment_id,
+          previousKey?.term || normalizedTerm,
+          previousKey?.billing_cycle || billingCycle,
+          previousKey?.billing_period || billingPeriod,
+        ]
       );
 
       const description = `Tuition - ${billingPeriod}`;
@@ -1338,6 +1377,7 @@ async function setClassTuition(req, res) {
       billing_period: billingPeriod,
       amount_due: amountDue,
       affected_enrollments: affected,
+      updated_template: Boolean(templateId),
     });
 
     res.json({
@@ -1407,6 +1447,56 @@ async function getStudentTuitionBreakdown(req, res) {
     res.json({ rows: result.rows, totals });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch student tuition breakdown' });
+  }
+}
+
+async function deleteClassTuitionTemplate(req, res) {
+  try {
+    await ensureClassTuitionStructures();
+    const { id, templateId } = req.params;
+
+    const templateRes = await pool.query(
+      `SELECT *
+       FROM class_tuition_templates
+       WHERE template_id = $1 AND class_id = $2
+       LIMIT 1`,
+      [templateId, id]
+    );
+
+    if (templateRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Tuition template not found' });
+    }
+
+    const tpl = templateRes.rows[0];
+
+    const feeDeleteRes = await pool.query(
+      `DELETE FROM fees f
+       USING enrollments e
+       WHERE f.enrollment_id = e.enrollment_id
+         AND e.class_id = $1
+         AND e.academic_year = $2
+         AND f.fee_type = 'tuition'
+         AND COALESCE(f.term, '') = COALESCE($3, '')
+         AND COALESCE(f.billing_cycle, '') = COALESCE($4, '')
+         AND COALESCE(f.billing_period, '') = COALESCE($5, '')`,
+      [id, tpl.academic_year, tpl.term, tpl.billing_cycle, tpl.billing_period]
+    );
+
+    await pool.query(
+      'DELETE FROM class_tuition_templates WHERE template_id = $1',
+      [templateId]
+    );
+
+    await req.audit('DELETE', 'class_tuition_templates', Number(templateId), tpl, {
+      removed_tuition_fees: feeDeleteRes.rowCount,
+    });
+
+    res.json({
+      message: 'Tuition form removed successfully.',
+      removed_tuition_fees: feeDeleteRes.rowCount,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to remove tuition form' });
   }
 }
 
@@ -2783,7 +2873,7 @@ module.exports = {
   getTeachers, createTeacher, updateTeacher, deleteTeacher,
   getParents, createParent, updateParent, deleteParent,
   getClasses, createClass, updateClass, deleteClass, lookupStudentClass,
-  getClassTuitionTemplates, setClassTuition, getStudentTuitionBreakdown,
+  getClassTuitionTemplates, setClassTuition, getStudentTuitionBreakdown, deleteClassTuitionTemplate,
   getSubjects, createSubject, updateSubject, deleteSubject,
   getEnrollments, createEnrollment, updateEnrollment, deleteEnrollment,
   getFees, createFee, updateFee,

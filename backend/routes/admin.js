@@ -45,6 +45,7 @@ router.get('/classes', admin.getClasses);
 router.get('/classes/student-lookup', admin.lookupStudentClass);
 router.get('/classes/:id/tuition', admin.getClassTuitionTemplates);
 router.post('/classes/:id/tuition', admin.setClassTuition);
+router.delete('/classes/:id/tuition/:templateId', admin.deleteClassTuitionTemplate);
 router.post('/classes', admin.createClass);
 router.put('/classes/:id', admin.updateClass);
 router.delete('/classes/:id', admin.deleteClass);

@@ -805,25 +805,36 @@
         term: termSettings?.current_term || 'Term 1',
       };
 
-      const existing = await api(`${API}/classes/${classId}/tuition?academic_year=${encodeURIComponent(defaults.year)}&term=${encodeURIComponent(defaults.term)}`);
-      const existingRows = (existing || []).map(r => `<tr>
-        <td>${escHtml(r.billing_cycle)}</td>
-        <td>${escHtml(r.billing_period)}</td>
-        <td>$${parseFloat(r.amount_due || 0).toFixed(2)}</td>
-      </tr>`).join('') || '<tr><td colspan="3">No tuition set yet for selected year/term.</td></tr>';
+      const draft = {
+        template_id: null,
+        academic_year: defaults.year,
+        term: defaults.term,
+        billing_cycle: 'monthly',
+        billing_period: '',
+        amount_due: '',
+      };
+
+      const getPayload = () => ({
+        template_id: draft.template_id,
+        academic_year: document.getElementById('tuitionAcademicYear')?.value?.trim() || defaults.year,
+        term: document.getElementById('tuitionTerm')?.value || defaults.term,
+        billing_cycle: document.getElementById('tuitionBillingCycle')?.value || 'monthly',
+        billing_period: document.getElementById('tuitionBillingPeriod')?.value?.trim() || '',
+        amount_due: document.getElementById('tuitionAmountDue')?.value?.trim() || '',
+      });
 
       const form = document.getElementById('modalForm');
       document.getElementById('modalTitle').textContent = `Set Tuition - ${className}`;
       form.innerHTML = `
-        <div class="alert" style="margin-bottom:0.8rem;">Set tuition for this class and term. Each entry applies only to students enrolled in this class for the selected year.</div>
+        <div class="alert" style="margin-bottom:0.8rem;">Set tuition for this class and term. Use <strong>Update Tuition</strong> for existing forms and <strong>Save Tuition</strong> for new forms.</div>
         <div class="form-row">
           <div class="form-group">
             <label>Academic Year</label>
-            <input type="text" name="academic_year" value="${escHtml(defaults.year)}" placeholder="YYYY/YYYY" required>
+            <input type="text" id="tuitionAcademicYear" value="${escHtml(defaults.year)}" placeholder="YYYY/YYYY" required>
           </div>
           <div class="form-group">
             <label>Term</label>
-            <select name="term" required>
+            <select id="tuitionTerm" required>
               ${['Term 1','Term 2','Term 3'].map(t => `<option value="${t}" ${defaults.term === t ? 'selected' : ''}>${t}</option>`).join('')}
             </select>
           </div>
@@ -831,7 +842,7 @@
         <div class="form-row">
           <div class="form-group">
             <label>Billing Cycle</label>
-            <select name="billing_cycle" required>
+            <select id="tuitionBillingCycle" required>
               <option value="monthly">Monthly</option>
               <option value="term">Term</option>
               <option value="semester">Semester</option>
@@ -839,35 +850,132 @@
           </div>
           <div class="form-group">
             <label>Amount Due</label>
-            <input type="number" name="amount_due" step="any" min="0" placeholder="0.00" required>
+            <input type="number" id="tuitionAmountDue" step="any" min="0" placeholder="0.00" required>
           </div>
         </div>
         <div class="form-group">
           <label>Billing Period Label</label>
-          <input type="text" name="billing_period" placeholder="e.g. May 2026, Term 1, Semester 1" required>
+          <input type="text" id="tuitionBillingPeriod" placeholder="e.g. May 2026, Term 1, Semester 1" required>
         </div>
         <div class="record-card" style="margin-top:0.75rem;">
-          <div style="font-weight:700; margin-bottom:0.5rem;">Existing Tuition For ${escHtml(defaults.year)} / ${escHtml(defaults.term)}</div>
-          <div class="table-container"><table><thead><tr><th>Cycle</th><th>Period</th><th>Amount Due</th></tr></thead><tbody>${existingRows}</tbody></table></div>
+          <div style="font-weight:700; margin-bottom:0.5rem;">Existing Tuition Forms</div>
+          <div class="table-container"><table><thead><tr><th>Year</th><th>Term</th><th>Cycle</th><th>Period</th><th>Amount Due</th><th>Action</th></tr></thead><tbody id="tuitionTemplateRows"><tr><td colspan="6">Loading...</td></tr></tbody></table></div>
         </div>
         <div class="modal-actions">
+          <button type="button" class="btn" id="newTuitionFormBtn">New Set Tuition Fee Form</button>
+          <button type="button" class="btn btn-success" id="updateTuitionBtn">Update Tuition</button>
+          <button type="button" class="btn btn-primary" id="saveTuitionBtn">Save Tuition</button>
           <button type="button" class="btn" onclick="closeModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save Tuition</button>
         </div>
       `;
 
-      form.onsubmit = async (e) => {
-        e.preventDefault();
-        const payload = Object.fromEntries(new FormData(form));
-        const res = await api(`${API}/classes/${classId}/tuition`, 'POST', payload);
+      const resetDraftForm = () => {
+        draft.template_id = null;
+        document.getElementById('tuitionAcademicYear').value = draft.academic_year || defaults.year;
+        document.getElementById('tuitionTerm').value = draft.term || defaults.term;
+        document.getElementById('tuitionBillingCycle').value = 'monthly';
+        document.getElementById('tuitionBillingPeriod').value = '';
+        document.getElementById('tuitionAmountDue').value = '';
+      };
+
+      const fillDraftForm = (row) => {
+        draft.template_id = Number(row.template_id);
+        document.getElementById('tuitionAcademicYear').value = row.academic_year || defaults.year;
+        document.getElementById('tuitionTerm').value = row.term || defaults.term;
+        document.getElementById('tuitionBillingCycle').value = row.billing_cycle || 'monthly';
+        document.getElementById('tuitionBillingPeriod').value = row.billing_period || '';
+        document.getElementById('tuitionAmountDue').value = Number(row.amount_due || 0);
+      };
+
+      const loadTemplateRows = async () => {
+        const list = await api(`${API}/classes/${classId}/tuition`);
+        const tbody = document.getElementById('tuitionTemplateRows');
+        if (!tbody) return;
+        if (!list || !Array.isArray(list) || list.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6">No tuition forms yet.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = list.map(r => `<tr>
+          <td>${escHtml(r.academic_year)}</td>
+          <td>${escHtml(r.term)}</td>
+          <td>${escHtml(r.billing_cycle)}</td>
+          <td>${escHtml(r.billing_period)}</td>
+          <td>$${parseFloat(r.amount_due || 0).toFixed(2)}</td>
+          <td>
+            <button type="button" class="btn btn-sm tuition-edit-btn" data-template-id="${r.template_id}">Update</button>
+            <button type="button" class="btn btn-sm btn-danger tuition-remove-btn" data-template-id="${r.template_id}">Remove</button>
+          </td>
+        </tr>`).join('');
+
+        tbody.querySelectorAll('.tuition-edit-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const selected = list.find((x) => Number(x.template_id) === Number(btn.dataset.templateId));
+            if (selected) fillDraftForm(selected);
+          });
+        });
+
+        tbody.querySelectorAll('.tuition-remove-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const selected = list.find((x) => Number(x.template_id) === Number(btn.dataset.templateId));
+            if (!selected) return;
+            const ok = confirm(`Remove tuition form ${selected.billing_period} (${selected.term}, ${selected.academic_year})?`);
+            if (!ok) return;
+            const res = await api(`${API}/classes/${classId}/tuition/${selected.template_id}`, 'DELETE');
+            if (res && !res.error) {
+              showAlert(res.message || 'Tuition form removed');
+              await loadTemplateRows();
+              loadStudents();
+              if (Number(draft.template_id) === Number(selected.template_id)) {
+                resetDraftForm();
+              }
+            } else {
+              showAlert(res?.error || 'Failed to remove tuition form', 'error');
+            }
+          });
+        });
+      };
+
+      const submitTuition = async ({ isUpdate }) => {
+        const payload = getPayload();
+        if (isUpdate && !payload.template_id) {
+          showAlert('Select an existing tuition form first, then click Update Tuition.', 'error');
+          return;
+        }
+        if (!isUpdate) {
+          payload.template_id = null;
+        }
+
+        let res = await api(`${API}/classes/${classId}/tuition`, 'POST', payload);
+        if (res?.needs_confirmation) {
+          const ok = confirm('A tuition form for the same period already exists. Do you want to proceed and replace it?');
+          if (!ok) return;
+          payload.confirm_replace = true;
+          res = await api(`${API}/classes/${classId}/tuition`, 'POST', payload);
+        }
+
         if (res && !res.error) {
-          showAlert(res.message || 'Class tuition saved successfully');
-          closeModal();
+          showAlert(res.message || 'Tuition form saved successfully');
+          await loadTemplateRows();
           loadStudents();
+          // Keep current values visible for admin verification.
+          document.getElementById('tuitionAcademicYear').value = payload.academic_year;
+          document.getElementById('tuitionTerm').value = payload.term;
+          document.getElementById('tuitionBillingCycle').value = payload.billing_cycle;
+          document.getElementById('tuitionBillingPeriod').value = payload.billing_period;
+          document.getElementById('tuitionAmountDue').value = payload.amount_due;
+          draft.template_id = res.template?.template_id || payload.template_id || null;
         } else {
-          showAlert(res?.error || 'Failed to save class tuition', 'error');
+          showAlert(res?.error || 'Failed to save tuition form', 'error');
         }
       };
+
+      document.getElementById('newTuitionFormBtn').addEventListener('click', () => resetDraftForm());
+      document.getElementById('saveTuitionBtn').addEventListener('click', () => submitTuition({ isUpdate: false }));
+      document.getElementById('updateTuitionBtn').addEventListener('click', () => submitTuition({ isUpdate: true }));
+
+      form.onsubmit = (e) => e.preventDefault();
+
+      await loadTemplateRows();
 
       document.getElementById('modalOverlay').classList.add('show');
     }
@@ -1101,8 +1209,6 @@
           { name: 'date_of_birth', label: 'Date of Birth', type: 'date' },
           { name: 'email', label: 'Email', type: 'email' },
           { name: 'phone', label: 'Phone' },
-          { name: 'tuition_amount_due', label: 'Tuition Due', type: 'number' },
-          { name: 'tuition_amount_paid', label: 'Tuition Paid', type: 'number' },
           { name: 'status', label: 'Status', type: 'select', options: ['active','inactive','graduated','transferred'] },
         ],
         onSuccess: () => { loadStudents(); },
@@ -1243,8 +1349,6 @@
           { name: 'date_of_birth', label: 'Date of Birth', type: 'date', required: true },
           { name: 'guardian_name', label: 'Parent/Guardian Name', placeholder: 'e.g. John Doe', required: true },
           { name: 'starting_class_id', label: 'Starting Class', type: 'select', options: [], required: true },
-          { name: 'tuition_amount_due', label: 'Tuition Due', type: 'number', placeholder: '0.00', required: true },
-          { name: 'tuition_amount_paid', label: 'Tuition Paid', type: 'number', placeholder: '0.00', required: true },
         ],
         onSuccess: () => { loadStudents(); },
       },
