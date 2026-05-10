@@ -347,6 +347,11 @@ tr:hover { background: #f8fafc; }
   overflow-y: auto;
 }
 
+.modal.tuition-modal {
+  max-width: 920px;
+  width: 96%;
+}
+
 .modal h2 {
   margin-bottom: 1.25rem;
 }
@@ -413,6 +418,21 @@ tr:hover { background: #f8fafc; }
 
 .action-dropdown .dropdown-menu a.text-danger {
   color: var(--danger);
+}
+
+.tuition-action-cell {
+  white-space: nowrap;
+}
+
+.tuition-action-cell .btn {
+  margin-right: 0.4rem;
+  margin-bottom: 0.35rem;
+}
+
+.tuition-action-stack {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
 }
 
 /* ─── Record Section ──────────────────────────── */

@@ -825,6 +825,7 @@
 
       const form = document.getElementById('modalForm');
       document.getElementById('modalTitle').textContent = `Set Tuition - ${className}`;
+      document.getElementById('modalOverlay').querySelector('.modal')?.classList.add('tuition-modal');
       form.innerHTML = `
         <div class="alert" style="margin-bottom:0.8rem;">Set tuition for this class and term. Use <strong>Update Tuition</strong> for existing forms and <strong>Save Tuition</strong> for new forms.</div>
         <div class="form-row">
@@ -901,9 +902,11 @@
           <td>${escHtml(r.billing_cycle)}</td>
           <td>${escHtml(r.billing_period)}</td>
           <td>$${parseFloat(r.amount_due || 0).toFixed(2)}</td>
-          <td>
-            <button type="button" class="btn btn-sm tuition-edit-btn" data-template-id="${r.template_id}">Update</button>
-            <button type="button" class="btn btn-sm btn-danger tuition-remove-btn" data-template-id="${r.template_id}">Remove</button>
+          <td class="tuition-action-cell">
+            <div class="tuition-action-stack">
+              <button type="button" class="btn btn-sm tuition-edit-btn" data-template-id="${r.template_id}">Update</button>
+              <button type="button" class="btn btn-sm btn-danger tuition-remove-btn" data-template-id="${r.template_id}">Remove</button>
+            </div>
           </td>
         </tr>`).join('');
 
@@ -1520,6 +1523,7 @@
     }
 
     function closeModal() {
+      document.getElementById('modalOverlay').querySelector('.modal')?.classList.remove('tuition-modal');
       document.getElementById('modalOverlay').classList.remove('show');
     }
 
