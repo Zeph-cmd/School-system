@@ -10,7 +10,13 @@ let failed = 0;
 const failures = [];
 
 async function api(path, method = 'GET', body = null, token = null) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  const opts = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'FreeSchoolManagementApp/1.0',
+    },
+  };
   if (token) opts.headers.Authorization = `Bearer ${token}`;
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(`${BASE}${path}`, opts);
@@ -68,7 +74,7 @@ async function run() {
     const r = await api('/api/auth/login', 'POST', {
       username: 'admin',
       role: 'admin',
-      password: 'admin123',
+      password: 'Admin@2026!',
     });
     ok(r.status === 200, `Expected 200, got ${r.status}`);
     ok(r.data && r.data.token, 'Missing admin token');

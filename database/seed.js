@@ -12,11 +12,52 @@ const bcrypt = require('bcrypt');
 const pool = require('../backend/config/db');
 
 const SALT_ROUNDS = 10;
+const FRESH_CREDENTIALS = {
+  adminPassword: 'Admin@2026!',
+  teacherEmail: 'teacher1@school.com',
+  teacherPassword: 'Teacher@2026!',
+  parentEmail: 'parent1@school.com',
+  parentPassword: 'Parent@2026!',
+};
+
+async function clearAllData(client) {
+  await client.query(`
+    TRUNCATE TABLE
+      audit_logs,
+      email_logs,
+      messages,
+      deleted_homework,
+      homework,
+      teaching_assignments,
+      parent_student,
+      results,
+      grade_change_requests,
+      grades,
+      class_tuition_templates,
+      fees,
+      attendance,
+      enrollments,
+      students,
+      parents,
+      teachers,
+      subjects,
+      classes,
+      registration_requests,
+      user_roles,
+      users,
+      system_settings,
+      roles
+    RESTART IDENTITY CASCADE
+  `);
+}
 
 async function seed() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    console.log('Clearing existing data...');
+    await clearAllData(client);
 
     // ── 1. Roles ──────────────────────────────────
     console.log('Seeding roles...');
@@ -31,9 +72,9 @@ async function seed() {
 
     // ── 2. Users ──────────────────────────────────
     console.log('Seeding users...');
-    const adminHash = await bcrypt.hash('admin123', SALT_ROUNDS);
-    const teacherHash = await bcrypt.hash('teacher123', SALT_ROUNDS);
-    const parentHash = await bcrypt.hash('parent123', SALT_ROUNDS);
+    const adminHash = await bcrypt.hash(FRESH_CREDENTIALS.adminPassword, SALT_ROUNDS);
+    const teacherHash = await bcrypt.hash(FRESH_CREDENTIALS.teacherPassword, SALT_ROUNDS);
+    const parentHash = await bcrypt.hash(FRESH_CREDENTIALS.parentPassword, SALT_ROUNDS);
 
     // Admin user
     const adminRes = await client.query(`
@@ -46,18 +87,18 @@ async function seed() {
     // Teacher user
     const teacherRes = await client.query(`
       INSERT INTO users (username, password_hash, email, phone)
-      VALUES ('teacher1', $1, 'jdoe@school.com', '0700000002')
+      VALUES ('teacher1', $1, $2, '0700000002')
       ON CONFLICT (username) DO UPDATE SET password_hash = $1
       RETURNING user_id
-    `, [teacherHash]);
+    `, [teacherHash, FRESH_CREDENTIALS.teacherEmail]);
 
     // Parent user
     const parentRes = await client.query(`
       INSERT INTO users (username, password_hash, email, phone)
-      VALUES ('parent1', $1, 'mwangi@gmail.com', '0700000003')
+      VALUES ('parent1', $1, $2, '0700000003')
       ON CONFLICT (username) DO UPDATE SET password_hash = $1
       RETURNING user_id
-    `, [parentHash]);
+    `, [parentHash, FRESH_CREDENTIALS.parentEmail]);
 
     const adminId = adminRes.rows[0].user_id;
     const teacherId = teacherRes.rows[0].user_id;
@@ -68,9 +109,6 @@ async function seed() {
     const roles = await client.query('SELECT role_id, role_name FROM roles');
     const roleMap = {};
     roles.rows.forEach(r => roleMap[r.role_name] = r.role_id);
-
-    // Clear existing assignments for these users and re-assign
-    await client.query('DELETE FROM user_roles WHERE user_id IN ($1,$2,$3)', [adminId, teacherId, parentId]);
 
     await client.query(`
       INSERT INTO user_roles (user_id, role_id) VALUES
@@ -104,10 +142,10 @@ async function seed() {
     console.log('Seeding teachers...');
     await client.query(`
       INSERT INTO teachers (employee_number, first_name, last_name, gender, phone, email) VALUES
-        ('EMP001', 'John', 'Doe', 'Male', '0711111111', 'jdoe@school.com'),
+        ('EMP001', 'John', 'Doe', 'Male', '0711111111', $1),
         ('EMP002', 'Jane', 'Smith', 'Female', '0722222222', 'jsmith@school.com')
       ON CONFLICT (employee_number) DO NOTHING
-    `);
+    `, [FRESH_CREDENTIALS.teacherEmail]);
 
     // ── 7. Students ───────────────────────────────
     console.log('Seeding students...');
@@ -125,10 +163,10 @@ async function seed() {
     console.log('Seeding parents...');
     await client.query(`
       INSERT INTO parents (first_name, last_name, phone, email, relationship) VALUES
-        ('James', 'Mwangi', '0700000003', 'mwangi@gmail.com', 'Father'),
+        ('James', 'Mwangi', '0700000003', $1, 'Father'),
         ('Mary', 'Ochieng', '0700000004', 'ochieng@gmail.com', 'Mother')
       ON CONFLICT DO NOTHING
-    `);
+    `, [FRESH_CREDENTIALS.parentEmail]);
 
     // ── 9. Parent-Student Links ───────────────────
     console.log('Linking parents to students...');
@@ -190,6 +228,12 @@ async function seed() {
       `, [teachers.rows[0].teacher_id, subjects.rows[0].subject_id, subjects.rows[1].subject_id, classes.rows[0].class_id]);
     }
 
+    await client.query(`
+      INSERT INTO system_settings (setting_key, setting_value)
+      VALUES ('admin_recovery_email', 'admin@school.com')
+      ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = NOW()
+    `);
+
     // ── 12. Sample Fees ──────────────────────────
     console.log('Adding sample fees...');
     const enrollments = await client.query('SELECT enrollment_id FROM enrollments ORDER BY enrollment_id');
@@ -204,9 +248,9 @@ async function seed() {
     await client.query('COMMIT');
     console.log('\n=== Seed completed successfully! ===');
     console.log('\nTest accounts:');
-    console.log('  Admin:   username=admin     password=admin123');
-    console.log('  Teacher: username=teacher1  password=teacher123');
-    console.log('  Parent:  username=parent1   password=parent123');
+    console.log(`  Admin:   username=admin     password=${FRESH_CREDENTIALS.adminPassword}`);
+    console.log(`  Teacher: username=teacher1  email=${FRESH_CREDENTIALS.teacherEmail}`);
+    console.log(`  Parent:  username=parent1   email=${FRESH_CREDENTIALS.parentEmail}`);
     console.log('\nStart server: npm start');
     console.log('Open: http://localhost:3000/login');
 
@@ -219,4 +263,8 @@ async function seed() {
   }
 }
 
-seed();
+if (require.main === module) {
+  seed();
+}
+
+module.exports = { seed, FRESH_CREDENTIALS };

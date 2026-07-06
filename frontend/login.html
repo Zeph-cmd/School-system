@@ -31,6 +31,22 @@
     .parent-fields { display: none; }
     .parent-fields.show { display: block; }
     .login-card { max-width: 450px; }
+    .password-field { position: relative; }
+    .password-field input { padding-right: 3rem; }
+    .password-toggle {
+      position: absolute;
+      right: 0.35rem;
+      top: 50%;
+      transform: translateY(-50%);
+      border: none;
+      background: transparent;
+      color: var(--text-light);
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 0.25rem;
+      line-height: 1;
+    }
+    .password-toggle:hover { color: var(--primary); }
     .fp-modal-overlay {
       position: fixed;
       inset: 0;
@@ -98,7 +114,10 @@
             </div>
             <div class="form-group" id="loginPasswordGroup" style="display:none;">
               <label for="loginPassword">Password</label>
-              <input type="password" id="loginPassword" autocomplete="current-password">
+              <div class="password-field">
+                <input type="password" id="loginPassword" autocomplete="current-password">
+                <button type="button" class="password-toggle" id="toggleLoginPassword" onclick="toggleLoginPassword()" aria-label="Show password">👁</button>
+              </div>
             </div>
             <div class="toggle-link" id="adminForgotWrap" style="display:none; text-align:right; margin: -0.2rem 0 0.5rem 0;">
               <a onclick="adminForgotPassword()">Forgot password?</a>
@@ -302,6 +321,7 @@
       const roleForgotLink = document.getElementById('roleForgotLink');
       const emailInput = document.getElementById('loginEmail');
       const passwordInput = document.getElementById('loginPassword');
+      const togglePasswordButton = document.getElementById('toggleLoginPassword');
       if (selectedLoginRole === 'admin') {
         passwordGroup.style.display = 'block';
         emailGroup.style.display = 'none';
@@ -310,6 +330,7 @@
         passwordInput.required = true;
         emailInput.required = false;
         emailInput.value = '';
+        togglePasswordButton.style.display = 'block';
       } else {
         passwordGroup.style.display = 'none';
         emailGroup.style.display = 'block';
@@ -319,6 +340,9 @@
         passwordInput.required = false;
         emailInput.required = true;
         passwordInput.value = '';
+        passwordInput.type = 'password';
+        togglePasswordButton.textContent = '👁';
+        togglePasswordButton.style.display = 'none';
       }
 
       // move to step 2
@@ -525,6 +549,20 @@
         return;
       }
       roleForgotCredentials();
+    }
+
+    function toggleLoginPassword() {
+      const input = document.getElementById('loginPassword');
+      const button = document.getElementById('toggleLoginPassword');
+      if (input.type === 'password') {
+        input.type = 'text';
+        button.textContent = '🙈';
+        button.setAttribute('aria-label', 'Hide password');
+      } else {
+        input.type = 'password';
+        button.textContent = '👁';
+        button.setAttribute('aria-label', 'Show password');
+      }
     }
 
     function openParentForgotModal() {

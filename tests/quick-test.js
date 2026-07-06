@@ -27,7 +27,10 @@ function assert(condition, msg) {
 async function api(path, method = 'GET', body = null, token = null) {
   const opts = {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'FreeSchoolManagementApp/1.0',
+    },
   };
   if (token) opts.headers['Authorization'] = `Bearer ${token}`;
   if (body) opts.body = JSON.stringify(body);
@@ -63,7 +66,7 @@ async function run() {
   });
 
   await test('Admin login succeeds', async () => {
-    const { status, data } = await api('/api/auth/login', 'POST', { username: 'admin', password: 'admin123' });
+    const { status, data } = await api('/api/auth/login', 'POST', { username: 'admin', password: 'Admin@2026!' });
     assert(status === 200, `Expected 200, got ${status}`);
     assert(data.token, 'Should return token');
     assert(data.user.roles.includes('admin'), 'Should have admin role');
@@ -71,14 +74,14 @@ async function run() {
   });
 
   await test('Teacher login succeeds', async () => {
-    const { status, data } = await api('/api/auth/login', 'POST', { username: 'teacher1', password: 'teacher123' });
+    const { status, data } = await api('/api/auth/login', 'POST', { username: 'teacher1', email: 'teacher1@school.com' });
     assert(status === 200, `Expected 200, got ${status}`);
     assert(data.user.roles.includes('teacher'), 'Should have teacher role');
     teacherToken = data.token;
   });
 
   await test('Parent login succeeds', async () => {
-    const { status, data } = await api('/api/auth/login', 'POST', { username: 'parent1', password: 'parent123' });
+    const { status, data } = await api('/api/auth/login', 'POST', { username: 'parent1', email: 'parent1@school.com' });
     assert(status === 200, `Expected 200, got ${status}`);
     assert(data.user.roles.includes('parent'), 'Should have parent role');
     parentToken = data.token;

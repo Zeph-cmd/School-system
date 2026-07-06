@@ -328,6 +328,14 @@
     </div>
   </div>
 
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settingsModalOverlay">
+    <div class="modal">
+      <h2 id="settingsModalTitle">Settings</h2>
+      <form id="settingsModalForm"></form>
+    </div>
+  </div>
+
   <script>
     const API = '/api/admin';
     const token = localStorage.getItem('token');
@@ -526,28 +534,33 @@
     }
 
     async function changeRecoveryEmail() {
-      const email = prompt('Enter new admin recovery email:');
-      if (email === null) return;
-      const currentPassword = prompt('Enter current admin password to confirm:');
-      if (currentPassword === null) return;
-      if (!email.trim()) {
-        showAlert('Recovery email cannot be empty', 'error');
-        return;
-      }
-      if (!currentPassword.trim()) {
-        showAlert('Current password is required', 'error');
-        return;
-      }
-      const res = await api(`${API}/recovery-email`, 'PUT', {
-        email: email.trim(),
-        current_password: currentPassword,
+      openSettingsModal({
+        title: 'Change Admin Recovery Email',
+        submitLabel: 'Save Email',
+        fields: [
+          { name: 'email', label: 'Recovery Email', type: 'email', placeholder: 'admin@example.com', required: true },
+          { name: 'current_password', label: 'Current Admin Password', type: 'password', placeholder: 'Confirm password', required: true },
+        ],
+        initialValues: { email: '' },
+        onSubmit: async (formData) => {
+          const email = String(formData.email || '').trim();
+          const currentPassword = String(formData.current_password || '').trim();
+          if (!email) {
+            return { error: 'Recovery email cannot be empty' };
+          }
+          if (!currentPassword) {
+            return { error: 'Current password is required' };
+          }
+          const res = await api(`${API}/recovery-email`, 'PUT', {
+            email,
+            current_password: currentPassword,
+          });
+          if (res && !res.error) {
+            loadRecoveryEmailStatus();
+          }
+          return res;
+        },
       });
-      if (res && !res.error) {
-        showAlert(res.message || 'Recovery email updated');
-        loadRecoveryEmailStatus();
-      } else {
-        showAlert(res?.error || 'Failed to update recovery email', 'error');
-      }
     }
 
     async function loadAcademicYearSettings() {
@@ -567,21 +580,25 @@
         showAlert(current?.error || 'Unable to load current academic year', 'error');
         return;
       }
-      const nextValue = prompt('Set current academic year (format: YYYY/YYYY):', current.current_academic_year || '');
-      if (nextValue === null) return;
-      const clean = String(nextValue || '').trim();
-      if (!/^\d{4}\/\d{4}$/.test(clean)) {
-        showAlert('Academic year must be in format YYYY/YYYY', 'error');
-        return;
-      }
-
-      const res = await api(`${API}/academic-year-settings`, 'PUT', { current_academic_year: clean });
-      if (res && !res.error) {
-        showAlert(res.message || 'Academic year updated');
-        loadAcademicYearSettings();
-      } else {
-        showAlert(res?.error || 'Failed to update academic year', 'error');
-      }
+      openSettingsModal({
+        title: 'Set Current Academic Year',
+        submitLabel: 'Update Year',
+        fields: [
+          { name: 'current_academic_year', label: 'Academic Year', type: 'text', placeholder: 'YYYY/YYYY', required: true },
+        ],
+        initialValues: { current_academic_year: current.current_academic_year || '' },
+        onSubmit: async (formData) => {
+          const clean = String(formData.current_academic_year || '').trim();
+          if (!/^\d{4}\/\d{4}$/.test(clean)) {
+            return { error: 'Academic year must be in format YYYY/YYYY' };
+          }
+          const res = await api(`${API}/academic-year-settings`, 'PUT', { current_academic_year: clean });
+          if (res && !res.error) {
+            loadAcademicYearSettings();
+          }
+          return res;
+        },
+      });
     }
 
     async function loadCurrentTermSettings() {
@@ -601,19 +618,84 @@
         showAlert(current?.error || 'Unable to load current term', 'error');
         return;
       }
-
-      const nextValue = prompt('Set current term (Term 1, Term 2, or Term 3):', current.current_term || 'Term 1');
-      if (nextValue === null) return;
-      const clean = String(nextValue || '').trim();
-
-      const res = await api(`${API}/current-term-settings`, 'PUT', { current_term: clean });
-      if (res && !res.error) {
-        showAlert(res.message || 'Current term updated');
-        loadCurrentTermSettings();
-      } else {
-        showAlert(res?.error || 'Failed to update current term', 'error');
-      }
+      openSettingsModal({
+        title: 'Set Current Term',
+        submitLabel: 'Update Term',
+        fields: [
+          {
+            name: 'current_term',
+            label: 'Current Term',
+            type: 'select',
+            required: true,
+            options: ['Term 1', 'Term 2', 'Term 3'],
+          },
+        ],
+        initialValues: { current_term: current.current_term || 'Term 1' },
+        onSubmit: async (formData) => {
+          const clean = String(formData.current_term || '').trim();
+          if (!['Term 1', 'Term 2', 'Term 3'].includes(clean)) {
+            return { error: 'current_term must be one of: Term 1, Term 2, Term 3' };
+          }
+          const res = await api(`${API}/current-term-settings`, 'PUT', { current_term: clean });
+          if (res && !res.error) {
+            loadCurrentTermSettings();
+          }
+          return res;
+        },
+      });
     }
+
+    function openSettingsModal({ title, submitLabel, fields, initialValues = {}, onSubmit }) {
+      const overlay = document.getElementById('settingsModalOverlay');
+      const titleEl = document.getElementById('settingsModalTitle');
+      const form = document.getElementById('settingsModalForm');
+      if (!overlay || !titleEl || !form) return;
+
+      titleEl.textContent = title;
+      form.innerHTML = fields.map((field) => {
+        if (field.type === 'select') {
+          const options = (field.options || []).map((opt) => `<option value="${escHtml(String(opt))}">${escHtml(String(opt))}</option>`).join('');
+          return `<div class="form-group">
+            <label>${escHtml(field.label)}</label>
+            <select name="${escHtml(field.name)}" ${field.required ? 'required' : ''}>${options}</select>
+          </div>`;
+        }
+        return `<div class="form-group">
+          <label>${escHtml(field.label)}</label>
+          <input type="${escHtml(field.type || 'text')}" name="${escHtml(field.name)}" placeholder="${escHtml(field.placeholder || '')}" ${field.required ? 'required' : ''}>
+        </div>`;
+      }).join('') + `<div class="modal-actions">
+        <button type="button" class="btn" onclick="closeSettingsModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">${escHtml(submitLabel || 'Save')}</button>
+      </div>`;
+
+      Object.entries(initialValues || {}).forEach(([key, value]) => {
+        const el = form.elements.namedItem(key);
+        if (el) el.value = value;
+      });
+
+      overlay.classList.add('show');
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = Object.fromEntries(new FormData(form));
+        const res = await onSubmit(formData);
+        if (res && !res.error) {
+          showAlert(res.message || 'Saved successfully');
+          closeSettingsModal();
+        } else {
+          showAlert(res?.error || 'Save failed', 'error');
+        }
+      };
+    }
+
+    function closeSettingsModal() {
+      document.getElementById('settingsModalOverlay').classList.remove('show');
+      document.getElementById('settingsModalForm').innerHTML = '';
+    }
+
+    document.getElementById('settingsModalOverlay').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeSettingsModal();
+    });
 
     // ── Students ────────────────────────────────────
     async function loadStudents() {

@@ -1,6 +1,7 @@
 require('dotenv').config();
 const bcrypt = require('bcrypt');
 const pool = require('../backend/config/db');
+const { FRESH_CREDENTIALS } = require('./seed');
 
 const SALT_ROUNDS = 10;
 
@@ -30,48 +31,58 @@ async function main() {
   try {
     await client.query('BEGIN');
 
-    // Keep only allowed accounts.
+    // Keep only the fresh baseline accounts.
     await client.query(
       `DELETE FROM user_roles
        WHERE user_id IN (
          SELECT user_id FROM users
-         WHERE username NOT IN ('admin', 'teacher1', 'parent1', 'teachparent_t', 'teachparent_p')
+         WHERE username NOT IN ('admin', 'teacher1', 'parent1')
        )`
     );
     await client.query(
       `DELETE FROM users
-       WHERE username NOT IN ('admin', 'teacher1', 'parent1', 'teachparent_t', 'teachparent_p')`
+       WHERE username NOT IN ('admin', 'teacher1', 'parent1')`
     );
 
     await upsertUser(client, {
-      username: 'teachparent_t',
-      password: 'teacher123',
-      email: 'shared@school.com',
-      phone: '0799999001',
+      username: 'admin',
+      password: FRESH_CREDENTIALS.adminPassword,
+      email: 'admin@school.com',
+      phone: '0700000001',
+      status: 'approved',
+      role: 'admin',
+    });
+
+    await upsertUser(client, {
+      username: 'teacher1',
+      password: FRESH_CREDENTIALS.teacherPassword,
+      email: FRESH_CREDENTIALS.teacherEmail,
+      phone: '0700000002',
       status: 'approved',
       role: 'teacher',
     });
 
     await upsertUser(client, {
-      username: 'teachparent_p',
-      password: 'parent123',
-      email: 'shared@school.com',
-      phone: '0799999002',
+      username: 'parent1',
+      password: FRESH_CREDENTIALS.parentPassword,
+      email: FRESH_CREDENTIALS.parentEmail,
+      phone: '0700000003',
       status: 'approved',
       role: 'parent',
     });
 
-    // Ensure profile rows for shared accounts exist.
     await client.query(
       `INSERT INTO teachers (employee_number, first_name, last_name, gender, phone, email)
-       VALUES ('EMP003', 'Shared', 'Teacher', 'Male', '0799999001', 'shared@school.com')
-       ON CONFLICT (employee_number) DO NOTHING`
+       VALUES ('EMP001', 'John', 'Doe', 'Male', '0700000002', $1)
+       ON CONFLICT (employee_number) DO UPDATE SET email = EXCLUDED.email, phone = EXCLUDED.phone`,
+      [FRESH_CREDENTIALS.teacherEmail]
     );
 
     await client.query(
       `INSERT INTO parents (first_name, last_name, phone, email, relationship)
-       VALUES ('Shared', 'Parent', '0799999002', 'shared@school.com', 'Guardian')
-       ON CONFLICT DO NOTHING`
+       VALUES ('James', 'Mwangi', '0700000003', $1, 'Father')
+       ON CONFLICT DO UPDATE SET email = EXCLUDED.email, phone = EXCLUDED.phone, relationship = EXCLUDED.relationship`,
+      [FRESH_CREDENTIALS.parentEmail]
     );
 
     // Ensure admin recovery email exists and is non-empty.
@@ -93,9 +104,10 @@ async function main() {
        FROM teachers t
        JOIN subjects s ON s.subject_code = 'MATH'
        JOIN classes c ON c.class_code = 'G1A'
-       WHERE LOWER(t.email) = LOWER('jdoe@school.com')
+       WHERE LOWER(t.email) = LOWER($1)
        LIMIT 1
-       ON CONFLICT DO NOTHING`
+       ON CONFLICT DO NOTHING`,
+      [FRESH_CREDENTIALS.teacherEmail]
     );
 
     // Ensure parent1 is linked to at least one student.
@@ -104,9 +116,10 @@ async function main() {
        SELECT p.parent_id, s.student_id, 'Father'
        FROM parents p
        JOIN students s ON s.admission_number = 'ADM001'
-       WHERE LOWER(p.email) = LOWER('mwangi@gmail.com')
+       WHERE LOWER(p.email) = LOWER($1)
        LIMIT 1
-       ON CONFLICT DO NOTHING`
+       ON CONFLICT DO NOTHING`,
+      [FRESH_CREDENTIALS.parentEmail]
     );
 
     await client.query('COMMIT');

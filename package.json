@@ -7,7 +7,8 @@
     "start": "node backend/server.js",
     "dev": "node --watch backend/server.js",
     "test": "node tests/quick-test.js",
-    "seed": "node database/seed.js"
+    "seed": "node database/seed.js",
+    "reset": "node database/seed.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
