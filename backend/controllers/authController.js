@@ -1,9 +1,14 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const pool = require('../config/db');
 const { logAction } = require('../middleware/audit');
 
 const SALT_ROUNDS = 10;
+
+function generateTemporaryPassword(prefix) {
+  return `${prefix}${crypto.randomBytes(4).toString('hex')}!`;
+}
 
 async function ensureSystemSettingsTable() {
   await pool.query(`
@@ -107,8 +112,8 @@ async function register(req, res) {
       parent_relationship,
     } = req.body;
 
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Username and password are required' });
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
     }
     if (!role) {
       return res.status(400).json({ error: 'Role is required (student, parent, or teacher)' });
@@ -156,6 +161,8 @@ async function register(req, res) {
       }
     }
 
+    const effectivePassword = String(password || '').trim() || generateTemporaryPassword(role === 'teacher' ? 'Teacher@' : 'Parent@');
+
     if (existingUserByUsername.rows.length > 0) {
       const existing = existingUserByUsername.rows[0];
 
@@ -184,12 +191,15 @@ async function register(req, res) {
           `SELECT parent_id
            FROM parents
            WHERE LOWER(email) = LOWER($1)
-             AND LOWER(TRIM(first_name)) = LOWER($2)
-             AND LOWER(TRIM(last_name)) = LOWER($3)
-             AND TRIM(phone) = $4
-             AND LOWER(TRIM(relationship)) = LOWER($5)
+             AND TRIM(phone) = $2
+             AND LOWER(TRIM(relationship)) = LOWER($3)
+             AND (
+               LOWER(TRIM(first_name)) = LOWER($4)
+               OR LOWER(TRIM(last_name)) = LOWER($5)
+               OR LOWER(TRIM(first_name || ' ' || last_name)) = LOWER(TRIM($4 || ' ' || $5))
+             )
            LIMIT 1`,
-          [cleanEmail, cleanFirstName, cleanLastName, cleanPhone, cleanParentRelationship]
+          [cleanEmail, cleanPhone, cleanParentRelationship, cleanFirstName, cleanLastName]
         );
         if (parentProfile.rows.length === 0) {
           return res.status(400).json({
@@ -217,7 +227,7 @@ async function register(req, res) {
           return res.status(409).json({ error: 'This child is already linked to your account.' });
         }
 
-        const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+        const passwordHash = await bcrypt.hash(effectivePassword, SALT_ROUNDS);
         const reqInsert = await pool.query(
           `INSERT INTO registration_requests
            (username, password_hash, email, phone, role, student_first_name, student_last_name, student_admission_number, parent_relationship, status)
@@ -253,13 +263,10 @@ async function register(req, res) {
       const teacherProfile = await pool.query(
         `SELECT teacher_id
          FROM teachers
-         WHERE LOWER(email) = LOWER($1)
-           AND LOWER(TRIM(first_name)) = LOWER($2)
-           AND LOWER(TRIM(last_name)) = LOWER($3)
-           AND LOWER(TRIM(employee_number)) = LOWER($4)
-           AND TRIM(phone) = $5
+         WHERE LOWER(TRIM(employee_number)) = LOWER($1)
+           AND LOWER(email) = LOWER($2)
          LIMIT 1`,
-        [cleanEmail, cleanFirstName, cleanLastName, cleanEmployeeNumber, cleanPhone]
+        [cleanEmployeeNumber, cleanEmail]
       );
       if (teacherProfile.rows.length === 0) {
         return res.status(400).json({
@@ -273,12 +280,15 @@ async function register(req, res) {
         `SELECT parent_id
          FROM parents
          WHERE LOWER(email) = LOWER($1)
-           AND LOWER(TRIM(first_name)) = LOWER($2)
-           AND LOWER(TRIM(last_name)) = LOWER($3)
-           AND TRIM(phone) = $4
-           AND LOWER(TRIM(relationship)) = LOWER($5)
+           AND TRIM(phone) = $2
+           AND LOWER(TRIM(relationship)) = LOWER($3)
+           AND (
+             LOWER(TRIM(first_name)) = LOWER($4)
+             OR LOWER(TRIM(last_name)) = LOWER($5)
+             OR LOWER(TRIM(first_name || ' ' || last_name)) = LOWER(TRIM($4 || ' ' || $5))
+           )
          LIMIT 1`,
-        [cleanEmail, cleanFirstName, cleanLastName, cleanPhone, cleanParentRelationship]
+        [cleanEmail, cleanPhone, cleanParentRelationship, cleanFirstName, cleanLastName]
       );
       if (parentProfile.rows.length === 0) {
         return res.status(400).json({
@@ -300,7 +310,7 @@ async function register(req, res) {
       }
     }
 
-    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    const passwordHash = await bcrypt.hash(effectivePassword, SALT_ROUNDS);
 
     const client = await pool.connect();
     let userId;

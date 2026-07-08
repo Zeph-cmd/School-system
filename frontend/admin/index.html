@@ -243,7 +243,7 @@
         <h1>Student Record</h1>
         <div class="record-search">
           <div class="record-search form-row-3">
-            <div class="form-group"><label>Student ID</label><input type="number" id="recStudentId" placeholder="e.g. 1"></div>
+            <div class="form-group"><label>Admission Number</label><input type="text" id="recAdmissionNo" placeholder="e.g. ADM001"></div>
             <div class="form-group"><label>First Name</label><input type="text" id="recFirstName" placeholder="e.g. John"></div>
             <div class="form-group"><label>Last Name</label><input type="text" id="recLastName" placeholder="e.g. Doe"></div>
             <button class="btn btn-primary" onclick="loadRecord()">Search</button>
@@ -1924,17 +1924,17 @@
 
     // ── Record Lookup ───────────────────────────────
     async function loadRecord() {
-      const studentId = document.getElementById('recStudentId').value;
+      const admissionNo = document.getElementById('recAdmissionNo').value.trim();
       const firstName = document.getElementById('recFirstName').value.trim();
       const lastName = document.getElementById('recLastName').value.trim();
 
-      if (!studentId && !firstName && !lastName) {
-        showAlert('Please enter at least one search field', 'error');
+      if (!admissionNo && !firstName && !lastName) {
+        showAlert('Please enter an admission number or name', 'error');
         return;
       }
 
       let url = `${API}/student-record?`;
-      if (studentId) url += `student_id=${encodeURIComponent(studentId)}&`;
+      if (admissionNo) url += `admission_number=${encodeURIComponent(admissionNo)}&`;
       if (firstName) url += `first_name=${encodeURIComponent(firstName)}&`;
       if (lastName) url += `last_name=${encodeURIComponent(lastName)}&`;
 

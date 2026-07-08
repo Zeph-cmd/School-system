@@ -45,6 +45,8 @@
       font-size: 1rem;
       padding: 0.25rem;
       line-height: 1;
+      z-index: 2;
+      min-width: 2.25rem;
     }
     .password-toggle:hover { color: var(--primary); }
     .fp-modal-overlay {
@@ -116,7 +118,7 @@
               <label for="loginPassword">Password</label>
               <div class="password-field">
                 <input type="password" id="loginPassword" autocomplete="current-password">
-                <button type="button" class="password-toggle" id="toggleLoginPassword" onclick="toggleLoginPassword()" aria-label="Show password">👁</button>
+                <button type="button" class="password-toggle" id="toggleLoginPassword" aria-label="Show password">👁</button>
               </div>
             </div>
             <div class="toggle-link" id="adminForgotWrap" style="display:none; text-align:right; margin: -0.2rem 0 0.5rem 0;">
@@ -158,7 +160,7 @@
               <label>Username</label>
               <input type="text" id="regUsername" required autocomplete="username">
             </div>
-            <div class="form-group">
+            <div class="form-group" id="regPasswordGroup">
               <label>Password</label>
               <input type="password" id="regPassword" required autocomplete="new-password">
             </div>
@@ -360,24 +362,32 @@
       // show/hide parent fields
       const pf = document.getElementById('parentFields');
       const tf = document.getElementById('teacherFields');
+      const regPasswordGroup = document.getElementById('regPasswordGroup');
+      const regPasswordInput = document.getElementById('regPassword');
       if (selectedRegRole === 'parent') {
         pf.classList.add('show');
         tf.classList.remove('show');
+        regPasswordGroup.style.display = 'none';
         document.getElementById('regStudentFirst').required = true;
         document.getElementById('regStudentLast').required = true;
         document.getElementById('regStudentAdmission').required = true;
         document.getElementById('regGuardianName').required = true;
         document.getElementById('regRelationship').required = true;
         document.getElementById('regEmployeeNumber').required = false;
+        regPasswordInput.required = false;
+        regPasswordInput.value = '';
       } else {
         pf.classList.remove('show');
         tf.classList.add('show');
+        regPasswordGroup.style.display = 'none';
         document.getElementById('regStudentFirst').required = false;
         document.getElementById('regStudentLast').required = false;
         document.getElementById('regStudentAdmission').required = false;
         document.getElementById('regGuardianName').required = false;
         document.getElementById('regRelationship').required = false;
         document.getElementById('regEmployeeNumber').required = true;
+        regPasswordInput.required = false;
+        regPasswordInput.value = '';
       }
       if (selectedRegRole === 'teacher') {
         document.getElementById('regEmployeeNumber').required = true;
@@ -428,13 +438,14 @@
 
       const body = {
         username: document.getElementById('regUsername').value,
-        password: document.getElementById('regPassword').value,
         first_name: document.getElementById('regFirstName').value,
         last_name: document.getElementById('regLastName').value,
         email: document.getElementById('regEmail').value,
         phone: document.getElementById('regPhone').value,
         role: selectedRegRole,
       };
+      const regPassword = document.getElementById('regPassword').value.trim();
+      if (regPassword) body.password = regPassword;
       if (selectedRegRole === 'teacher') {
         body.employee_number = document.getElementById('regEmployeeNumber').value;
       }
@@ -564,6 +575,8 @@
         button.setAttribute('aria-label', 'Show password');
       }
     }
+
+    document.getElementById('toggleLoginPassword')?.addEventListener('click', toggleLoginPassword);
 
     function openParentForgotModal() {
       if (selectedLoginRole !== 'parent') return;
