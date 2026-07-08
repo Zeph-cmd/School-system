@@ -160,10 +160,6 @@
               <label>Username</label>
               <input type="text" id="regUsername" required autocomplete="username">
             </div>
-            <div class="form-group" id="regPasswordGroup">
-              <label>Password</label>
-              <input type="password" id="regPassword" required autocomplete="new-password">
-            </div>
             <div class="form-group">
               <label>First Name</label>
               <input type="text" id="regFirstName" required>
@@ -362,32 +358,24 @@
       // show/hide parent fields
       const pf = document.getElementById('parentFields');
       const tf = document.getElementById('teacherFields');
-      const regPasswordGroup = document.getElementById('regPasswordGroup');
-      const regPasswordInput = document.getElementById('regPassword');
       if (selectedRegRole === 'parent') {
         pf.classList.add('show');
         tf.classList.remove('show');
-        regPasswordGroup.style.display = 'none';
         document.getElementById('regStudentFirst').required = true;
         document.getElementById('regStudentLast').required = true;
         document.getElementById('regStudentAdmission').required = true;
         document.getElementById('regGuardianName').required = true;
         document.getElementById('regRelationship').required = true;
         document.getElementById('regEmployeeNumber').required = false;
-        regPasswordInput.required = false;
-        regPasswordInput.value = '';
       } else {
         pf.classList.remove('show');
         tf.classList.add('show');
-        regPasswordGroup.style.display = 'none';
         document.getElementById('regStudentFirst').required = false;
         document.getElementById('regStudentLast').required = false;
         document.getElementById('regStudentAdmission').required = false;
         document.getElementById('regGuardianName').required = false;
         document.getElementById('regRelationship').required = false;
         document.getElementById('regEmployeeNumber').required = true;
-        regPasswordInput.required = false;
-        regPasswordInput.value = '';
       }
       if (selectedRegRole === 'teacher') {
         document.getElementById('regEmployeeNumber').required = true;
@@ -444,8 +432,6 @@
         phone: document.getElementById('regPhone').value,
         role: selectedRegRole,
       };
-      const regPassword = document.getElementById('regPassword').value.trim();
-      if (regPassword) body.password = regPassword;
       if (selectedRegRole === 'teacher') {
         body.employee_number = document.getElementById('regEmployeeNumber').value;
       }

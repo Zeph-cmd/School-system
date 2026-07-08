@@ -2528,7 +2528,10 @@ async function getStudentRecord(req, res) {
     const { admission_number, student_id, first_name, last_name } = req.query;
     let studentQuery = 'SELECT * FROM students WHERE 1=1';
     const params = [];
-    if (admission_number) { params.push(admission_number); studentQuery += ` AND LOWER(admission_number) = LOWER($${params.length})`; }
+    if (admission_number) {
+      params.push(admission_number);
+      studentQuery += ` AND regexp_replace(UPPER(TRIM(admission_number)), '[^A-Z0-9]', '', 'g') = regexp_replace(UPPER(TRIM($${params.length})), '[^A-Z0-9]', '', 'g')`;
+    }
     if (student_id) { params.push(student_id); studentQuery += ` AND student_id = $${params.length}`; }
     if (first_name) { params.push(first_name); studentQuery += ` AND LOWER(first_name) = LOWER($${params.length})`; }
     if (last_name) { params.push(last_name); studentQuery += ` AND LOWER(last_name) = LOWER($${params.length})`; }

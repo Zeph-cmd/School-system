@@ -10,6 +10,10 @@ function generateTemporaryPassword(prefix) {
   return `${prefix}${crypto.randomBytes(4).toString('hex')}!`;
 }
 
+function normalizeCode(value) {
+  return String(value || '').trim().replace(/[^a-z0-9]/gi, '').toUpperCase();
+}
+
 async function ensureSystemSettingsTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS system_settings (
@@ -70,7 +74,7 @@ async function findStudentForParentRequest(firstName, lastName, admissionNo, gua
      FROM students s
      WHERE LOWER(TRIM(s.first_name)) = LOWER($1)
        AND LOWER(TRIM(s.last_name)) = LOWER($2)
-       AND ($3::text IS NULL OR LOWER(TRIM(s.admission_number)) = LOWER(TRIM($3)))
+       AND ($3::text IS NULL OR regexp_replace(UPPER(TRIM(s.admission_number)), '[^A-Z0-9]', '', 'g') = regexp_replace(UPPER(TRIM($3)), '[^A-Z0-9]', '', 'g'))
        AND (
          EXISTS (
            SELECT 1
@@ -263,7 +267,7 @@ async function register(req, res) {
       const teacherProfile = await pool.query(
         `SELECT teacher_id
          FROM teachers
-         WHERE LOWER(TRIM(employee_number)) = LOWER($1)
+         WHERE regexp_replace(UPPER(TRIM(employee_number)), '[^A-Z0-9]', '', 'g') = regexp_replace(UPPER(TRIM($1)), '[^A-Z0-9]', '', 'g')
            AND LOWER(email) = LOWER($2)
          LIMIT 1`,
         [cleanEmployeeNumber, cleanEmail]
