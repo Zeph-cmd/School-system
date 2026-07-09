@@ -267,6 +267,8 @@ async function ensureRegistrationRequestsTable() {
       email VARCHAR(150),
       phone VARCHAR(20),
       role VARCHAR(50) NOT NULL,
+      first_name VARCHAR(100),
+      last_name VARCHAR(100),
       student_first_name VARCHAR(100),
       student_last_name VARCHAR(100),
       student_admission_number VARCHAR(50),
@@ -278,6 +280,8 @@ async function ensureRegistrationRequestsTable() {
       reviewed_at TIMESTAMP
     )
   `);
+  await pool.query('ALTER TABLE registration_requests ADD COLUMN IF NOT EXISTS first_name VARCHAR(100)');
+  await pool.query('ALTER TABLE registration_requests ADD COLUMN IF NOT EXISTS last_name VARCHAR(100)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_registration_requests_status_created ON registration_requests (status, created_at DESC)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_registration_requests_username ON registration_requests (username)');
 }
@@ -2129,6 +2133,8 @@ async function getPendingRegistrations(req, res) {
           COALESCE(rr.email, u.email) AS email,
           COALESCE(rr.phone, u.phone) AS phone,
           rr.role,
+          rr.first_name,
+          rr.last_name,
           rr.status,
           rr.student_first_name,
           rr.student_last_name,
@@ -2165,7 +2171,12 @@ async function getPendingRegistrations(req, res) {
 
     if (q) {
       params.push(`%${q}%`);
-      query += ` AND (rr.username ILIKE $${params.length} OR COALESCE(rr.email, '') ILIKE $${params.length})`;
+      query += ` AND (
+        rr.username ILIKE $${params.length}
+        OR COALESCE(rr.email, '') ILIKE $${params.length}
+        OR COALESCE(rr.first_name, '') ILIKE $${params.length}
+        OR COALESCE(rr.last_name, '') ILIKE $${params.length}
+      )`;
     }
 
     query += ' ORDER BY rr.created_at DESC';
@@ -2206,64 +2217,58 @@ async function approveRegistration(req, res) {
     }
     const account = userRes.rows[0];
 
-    // If parent, auto-link to student and create parent record if needed
-    if (regReq.role === 'parent' && regReq?.student_first_name && regReq?.student_last_name) {
-      let studentRes;
-      const admissionNo = (regReq.student_admission_number || '').trim();
-      if (admissionNo) {
-        studentRes = await pool.query(
-          'SELECT student_id FROM students WHERE LOWER(TRIM(admission_number)) = LOWER(TRIM($1)) LIMIT 1',
-          [admissionNo]
-        );
-      } else {
-        studentRes = await pool.query(
-          'SELECT student_id FROM students WHERE LOWER(TRIM(first_name)) = LOWER($1) AND LOWER(TRIM(last_name)) = LOWER($2)',
-          [regReq.student_first_name.trim(), regReq.student_last_name.trim()]
-        );
-      }
+    if (regReq.role === 'parent') {
+      const admissionNo = String(regReq.student_admission_number || '').trim();
+      const profileEmail = String(regReq.email || account.email || '').trim();
+      let parentId = null;
 
-      if (studentRes.rows.length > 1) {
-        return res.status(400).json({
-          error: 'Multiple students matched this parent registration. Please add admission number to registration data before approval.'
-        });
-      }
-
-      if (studentRes.rows.length > 0) {
-        // Ensure parent profile exists once
-        let parentId;
-        const profileEmail = String(regReq.email || account.email || '').trim();
-        if (profileEmail) {
-          const existingParent = await pool.query('SELECT parent_id FROM parents WHERE LOWER(email) = LOWER($1) LIMIT 1', [profileEmail]);
-          if (existingParent.rows.length > 0) {
-            parentId = existingParent.rows[0].parent_id;
-          }
-        }
-        if (!parentId) {
-          const nameParts = account.username.split(/[._-]/);
-          const parentRes = await pool.query(
-            `INSERT INTO parents (first_name, last_name, phone, email, relationship)
-             VALUES ($1, $2, $3, $4, $5) RETURNING parent_id`,
-            [
-              nameParts[0] || account.username,
-              nameParts[1] || '',
-              regReq.phone || account.phone || '',
-              profileEmail || null,
-              regReq.parent_relationship || null,
-            ]
+      const studentRes = admissionNo
+        ? await pool.query(
+            `SELECT student_id
+             FROM students
+             WHERE regexp_replace(UPPER(TRIM(admission_number)), '[^A-Z0-9]', '', 'g') = regexp_replace(UPPER(TRIM($1)), '[^A-Z0-9]', '', 'g')
+             LIMIT 1`,
+            [admissionNo]
+          )
+        : await pool.query(
+            `SELECT student_id
+             FROM students
+             WHERE LOWER(TRIM(first_name)) = LOWER($1)
+               AND LOWER(TRIM(last_name)) = LOWER($2)
+             LIMIT 1`,
+            [regReq.student_first_name?.trim() || '', regReq.student_last_name?.trim() || '']
           );
-          parentId = parentRes.rows[0].parent_id;
-        }
 
-        // Link parent to student(s)
-        for (const student of studentRes.rows) {
-          await pool.query(
-            'INSERT INTO parent_student (parent_id, student_id, relationship) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
-            [parentId, student.student_id, regReq.parent_relationship || null]
-          );
-        }
-      } else {
+      if (studentRes.rows.length === 0) {
         return res.status(400).json({ error: 'No matching student found for this parent request.' });
       }
+
+      if (profileEmail) {
+        const existingParent = await pool.query('SELECT parent_id FROM parents WHERE LOWER(email) = LOWER($1) LIMIT 1', [profileEmail]);
+        if (existingParent.rows.length > 0) {
+          parentId = existingParent.rows[0].parent_id;
+        }
+      }
+
+      if (!parentId) {
+        const parentRes = await pool.query(
+          `INSERT INTO parents (first_name, last_name, phone, email, relationship)
+           VALUES ($1, $2, $3, $4, $5) RETURNING parent_id`,
+          [
+            regReq.first_name || account.username,
+            regReq.last_name || '',
+            regReq.phone || account.phone || '',
+            profileEmail || null,
+            regReq.parent_relationship || null,
+          ]
+        );
+        parentId = parentRes.rows[0].parent_id;
+      }
+
+      await pool.query(
+        'INSERT INTO parent_student (parent_id, student_id, relationship) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+        [parentId, studentRes.rows[0].student_id, regReq.parent_relationship || null]
+      );
     }
 
     if (account.status === 'pending') {

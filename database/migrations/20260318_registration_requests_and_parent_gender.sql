@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS registration_requests (
   email VARCHAR(150),
   phone VARCHAR(20),
   role VARCHAR(50) NOT NULL,
+  first_name VARCHAR(100),
+  last_name VARCHAR(100),
   student_first_name VARCHAR(100),
   student_last_name VARCHAR(100),
   student_admission_number VARCHAR(50),
@@ -17,6 +19,9 @@ CREATE TABLE IF NOT EXISTS registration_requests (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   reviewed_at TIMESTAMP
 );
+
+ALTER TABLE registration_requests ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
+ALTER TABLE registration_requests ADD COLUMN IF NOT EXISTS last_name VARCHAR(100);
 
 CREATE INDEX IF NOT EXISTS idx_registration_requests_status_created
   ON registration_requests (status, created_at DESC);

@@ -108,7 +108,6 @@
       <div id="sec-parents" class="section">
         <h1>Parents</h1>
         <div class="btn-group">
-          <button class="btn btn-primary" onclick="openModal('parent')">+ Add Parent</button>
           <input type="text" id="parentSearch" placeholder="Search parent name..." oninput="applyParentFilters()" style="padding:0.5rem; border-radius:6px; border:1px solid var(--border); width:220px">
         </div>
         <div class="table-container">
@@ -208,13 +207,13 @@
             <option value="approved">Approved</option>
             <option value="all">All Statuses</option>
           </select>
-          <input type="text" id="approvalSearchFilter" placeholder="Search username/email..." style="padding:0.5rem; border-radius:6px; border:1px solid var(--border); width:220px">
+          <input type="text" id="approvalSearchFilter" placeholder="Search name/username/email..." style="padding:0.5rem; border-radius:6px; border:1px solid var(--border); width:240px">
           <button class="btn btn-primary btn-sm" onclick="loadApprovals()">Apply</button>
           <button class="btn btn-sm" onclick="clearApprovalsFilters()">Clear</button>
         </div>
         <div class="table-container">
           <table><thead><tr>
-            <th>ID</th><th>Username</th><th>Role</th><th>Email</th><th>Phone</th><th>Student Name</th><th>Submitted</th><th>Status</th><th>Actions</th>
+            <th>ID</th><th>Username</th><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th>Student Name</th><th>Submitted</th><th>Status</th><th>Actions</th>
           </tr></thead><tbody id="approvalsTable"></tbody></table>
         </div>
 
@@ -1627,6 +1626,7 @@
       const data = await api(url);
       if (!data) return;
       document.getElementById('approvalsTable').innerHTML = data.map(r => {
+        const requesterName = r.first_name ? `${r.first_name} ${r.last_name || ''}`.trim() : '-';
         const studentName = r.student_first_name ? `${r.student_first_name} ${r.student_last_name}` : '-';
         const date = r.created_at ? new Date(r.created_at).toLocaleDateString() : '';
         const badge = r.status === 'pending' ? 'badge-unpaid' : r.status === 'approved' ? 'badge-active' : 'badge-inactive';
@@ -1640,12 +1640,12 @@
           actions = `<button class="btn btn-primary btn-sm" onclick="reopenReg(${r.request_id})">Reopen</button>`;
         }
         return `<tr>
-          <td>${r.request_id}</td><td>${escHtml(r.username)}</td><td>${r.role}</td>
-          <td>${r.email || '-'}</td><td>${r.phone || '-'}</td><td>${studentName}</td>
+          <td>${r.request_id}</td><td>${escHtml(r.username)}</td><td>${escHtml(requesterName)}</td><td>${r.role}</td>
+          <td>${r.email || '-'}</td><td>${r.phone || '-'}</td><td>${escHtml(studentName)}</td>
           <td>${date}</td><td><span class="badge ${badge}">${r.status}</span></td>
           <td>${actions}</td>
         </tr>`;
-      }).join('') || '<tr><td colspan="9">No registration requests.</td></tr>';
+      }).join('') || '<tr><td colspan="10">No registration requests.</td></tr>';
 
       await loadPendingGradeChanges();
       await loadRejectedRecoveryTable();

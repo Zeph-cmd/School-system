@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS registration_requests (
     email VARCHAR(150),
     phone VARCHAR(20),
     role VARCHAR(50) NOT NULL,
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
     student_first_name VARCHAR(100),
     student_last_name VARCHAR(100),
     student_admission_number VARCHAR(50),

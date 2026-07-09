@@ -31,19 +31,6 @@ async function main() {
   try {
     await client.query('BEGIN');
 
-    // Keep only the fresh baseline accounts.
-    await client.query(
-      `DELETE FROM user_roles
-       WHERE user_id IN (
-         SELECT user_id FROM users
-         WHERE username NOT IN ('admin', 'teacher1', 'parent1')
-       )`
-    );
-    await client.query(
-      `DELETE FROM users
-       WHERE username NOT IN ('admin', 'teacher1', 'parent1')`
-    );
-
     await upsertUser(client, {
       username: 'admin',
       password: FRESH_CREDENTIALS.adminPassword,
@@ -71,20 +58,6 @@ async function main() {
       role: 'parent',
     });
 
-    await client.query(
-      `INSERT INTO teachers (employee_number, first_name, last_name, gender, phone, email)
-       VALUES ('EMP001', 'John', 'Doe', 'Male', '0700000002', $1)
-       ON CONFLICT (employee_number) DO UPDATE SET email = EXCLUDED.email, phone = EXCLUDED.phone`,
-      [FRESH_CREDENTIALS.teacherEmail]
-    );
-
-    await client.query(
-      `INSERT INTO parents (first_name, last_name, phone, email, relationship)
-       VALUES ('James', 'Mwangi', '0700000003', $1, 'Father')
-       ON CONFLICT DO UPDATE SET email = EXCLUDED.email, phone = EXCLUDED.phone, relationship = EXCLUDED.relationship`,
-      [FRESH_CREDENTIALS.parentEmail]
-    );
-
     // Ensure admin recovery email exists and is non-empty.
     await client.query(
       `INSERT INTO system_settings (setting_key, setting_value)
@@ -95,31 +68,6 @@ async function main() {
       `INSERT INTO system_settings (setting_key, setting_value)
        VALUES ('grade_edit_enabled', 'false')
        ON CONFLICT (setting_key) DO NOTHING`
-    );
-
-    // Ensure teacher1 has at least one assignment.
-    await client.query(
-      `INSERT INTO teaching_assignments (teacher_id, subject_id, class_id, academic_year, term)
-       SELECT t.teacher_id, s.subject_id, c.class_id, '2025/2026', 'Term 1'
-       FROM teachers t
-       JOIN subjects s ON s.subject_code = 'MATH'
-       JOIN classes c ON c.class_code = 'G1A'
-       WHERE LOWER(t.email) = LOWER($1)
-       LIMIT 1
-       ON CONFLICT DO NOTHING`,
-      [FRESH_CREDENTIALS.teacherEmail]
-    );
-
-    // Ensure parent1 is linked to at least one student.
-    await client.query(
-      `INSERT INTO parent_student (parent_id, student_id, relationship)
-       SELECT p.parent_id, s.student_id, 'Father'
-       FROM parents p
-       JOIN students s ON s.admission_number = 'ADM001'
-       WHERE LOWER(p.email) = LOWER($1)
-       LIMIT 1
-       ON CONFLICT DO NOTHING`,
-      [FRESH_CREDENTIALS.parentEmail]
     );
 
     await client.query('COMMIT');

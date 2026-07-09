@@ -10,10 +10,6 @@ function generateTemporaryPassword(prefix) {
   return `${prefix}${crypto.randomBytes(4).toString('hex')}!`;
 }
 
-function normalizeCode(value) {
-  return String(value || '').trim().replace(/[^a-z0-9]/gi, '').toUpperCase();
-}
-
 async function ensureSystemSettingsTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS system_settings (
@@ -53,6 +49,8 @@ async function ensureRegistrationRequestsTable() {
       email VARCHAR(150),
       phone VARCHAR(20),
       role VARCHAR(50) NOT NULL,
+      first_name VARCHAR(100),
+      last_name VARCHAR(100),
       student_first_name VARCHAR(100),
       student_last_name VARCHAR(100),
       student_admission_number VARCHAR(50),
@@ -64,34 +62,10 @@ async function ensureRegistrationRequestsTable() {
       reviewed_at TIMESTAMP
     )
   `);
+  await pool.query('ALTER TABLE registration_requests ADD COLUMN IF NOT EXISTS first_name VARCHAR(100)');
+  await pool.query('ALTER TABLE registration_requests ADD COLUMN IF NOT EXISTS last_name VARCHAR(100)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_registration_requests_status_created ON registration_requests (status, created_at DESC)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_registration_requests_username ON registration_requests (username)');
-}
-
-async function findStudentForParentRequest(firstName, lastName, admissionNo, guardianName) {
-  return pool.query(
-    `SELECT s.student_id
-     FROM students s
-     WHERE LOWER(TRIM(s.first_name)) = LOWER($1)
-       AND LOWER(TRIM(s.last_name)) = LOWER($2)
-       AND ($3::text IS NULL OR regexp_replace(UPPER(TRIM(s.admission_number)), '[^A-Z0-9]', '', 'g') = regexp_replace(UPPER(TRIM($3)), '[^A-Z0-9]', '', 'g'))
-       AND (
-         EXISTS (
-           SELECT 1
-           FROM parent_student ps
-           JOIN parents p ON p.parent_id = ps.parent_id
-           WHERE ps.student_id = s.student_id
-             AND LOWER(TRIM(p.first_name || ' ' || p.last_name)) = LOWER(TRIM($4))
-         )
-         OR EXISTS (
-           SELECT 1
-           FROM parents p
-           WHERE LOWER(TRIM(p.first_name || ' ' || p.last_name)) = LOWER(TRIM($4))
-         )
-       )
-     LIMIT 1`,
-    [firstName, lastName, admissionNo || null, guardianName]
-  );
 }
 
 // POST /api/auth/register
@@ -112,7 +86,6 @@ async function register(req, res) {
       student_first_name,
       student_last_name,
       student_admission_number,
-      guardian_name,
       parent_relationship,
     } = req.body;
 
@@ -142,7 +115,6 @@ async function register(req, res) {
     const cleanStudentFirst = (student_first_name || '').trim();
     const cleanStudentLast = (student_last_name || '').trim();
     const cleanAdmissionNumber = (student_admission_number || '').trim();
-    const cleanGuardianName = (guardian_name || '').trim();
     const cleanParentRelationship = (parent_relationship || '').trim();
 
     if ((role === 'teacher' || role === 'parent') && (!cleanEmail || !cleanPhone || !cleanFirstName || !cleanLastName)) {
@@ -157,11 +129,8 @@ async function register(req, res) {
       if (!cleanStudentFirst || !cleanStudentLast || !cleanAdmissionNumber) {
         return res.status(400).json({ error: 'Student first name, last name, and admission number are required for parent registration.' });
       }
-      if (!cleanGuardianName) {
-        return res.status(400).json({ error: 'Guardian name is required and must match school records.' });
-      }
       if (!cleanParentRelationship) {
-        return res.status(400).json({ error: 'Parent relationship is required and must match school records.' });
+        return res.status(400).json({ error: 'Parent relationship is required.' });
       }
     }
 
@@ -191,57 +160,19 @@ async function register(req, res) {
           return res.status(409).json({ error: 'This username exists but is not a parent account.' });
         }
 
-        const parentProfile = await pool.query(
-          `SELECT parent_id
-           FROM parents
-           WHERE LOWER(email) = LOWER($1)
-             AND TRIM(phone) = $2
-             AND LOWER(TRIM(relationship)) = LOWER($3)
-             AND (
-               LOWER(TRIM(first_name)) = LOWER($4)
-               OR LOWER(TRIM(last_name)) = LOWER($5)
-               OR LOWER(TRIM(first_name || ' ' || last_name)) = LOWER(TRIM($4 || ' ' || $5))
-             )
-           LIMIT 1`,
-          [cleanEmail, cleanPhone, cleanParentRelationship, cleanFirstName, cleanLastName]
-        );
-        if (parentProfile.rows.length === 0) {
-          return res.status(400).json({
-            error: 'Parent profile not found with exact matching details. Ensure all registration fields match admin records.'
-          });
-        }
-
-        const studentCheck = await findStudentForParentRequest(
-          cleanStudentFirst,
-          cleanStudentLast,
-          cleanAdmissionNumber,
-          cleanGuardianName
-        );
-        if (studentCheck.rows.length === 0) {
-          return res.status(400).json({
-            error: 'No matching school record found for that student/guardian combination. Confirm names (and admission number if provided) with admin.'
-          });
-        }
-
-        const existingLink = await pool.query(
-          'SELECT 1 FROM parent_student WHERE parent_id = $1 AND student_id = $2 LIMIT 1',
-          [parentProfile.rows[0].parent_id, studentCheck.rows[0].student_id]
-        );
-        if (existingLink.rows.length > 0) {
-          return res.status(409).json({ error: 'This child is already linked to your account.' });
-        }
-
         const passwordHash = await bcrypt.hash(effectivePassword, SALT_ROUNDS);
         const reqInsert = await pool.query(
           `INSERT INTO registration_requests
-           (username, password_hash, email, phone, role, student_first_name, student_last_name, student_admission_number, parent_relationship, status)
-           VALUES ($1,$2,$3,$4,'parent',$5,$6,$7,$8,'pending')
+           (username, password_hash, email, phone, role, first_name, last_name, student_first_name, student_last_name, student_admission_number, parent_relationship, status)
+           VALUES ($1,$2,$3,$4,'parent',$5,$6,$7,$8,$9,$10,'pending')
            RETURNING request_id, status`,
           [
             cleanUsername,
             passwordHash,
             cleanEmail,
             cleanPhone,
+            cleanFirstName,
+            cleanLastName,
             cleanStudentFirst,
             cleanStudentLast,
             cleanAdmissionNumber,
@@ -279,41 +210,6 @@ async function register(req, res) {
       }
     }
 
-    if (role === 'parent') {
-      const parentProfile = await pool.query(
-        `SELECT parent_id
-         FROM parents
-         WHERE LOWER(email) = LOWER($1)
-           AND TRIM(phone) = $2
-           AND LOWER(TRIM(relationship)) = LOWER($3)
-           AND (
-             LOWER(TRIM(first_name)) = LOWER($4)
-             OR LOWER(TRIM(last_name)) = LOWER($5)
-             OR LOWER(TRIM(first_name || ' ' || last_name)) = LOWER(TRIM($4 || ' ' || $5))
-           )
-         LIMIT 1`,
-        [cleanEmail, cleanPhone, cleanParentRelationship, cleanFirstName, cleanLastName]
-      );
-      if (parentProfile.rows.length === 0) {
-        return res.status(400).json({
-          error: 'Parent profile not found with exact matching details. Ensure all registration fields match admin records.'
-        });
-      }
-
-      const studentCheck = await findStudentForParentRequest(
-        cleanStudentFirst,
-        cleanStudentLast,
-        cleanAdmissionNumber,
-        cleanGuardianName
-      );
-
-      if (studentCheck.rows.length === 0) {
-        return res.status(400).json({
-          error: 'No matching school record found for that student/guardian combination. Confirm names (and admission number if provided) with admin.'
-        });
-      }
-    }
-
     const passwordHash = await bcrypt.hash(effectivePassword, SALT_ROUNDS);
 
     const client = await pool.connect();
@@ -339,14 +235,16 @@ async function register(req, res) {
 
       result = await client.query(
         `INSERT INTO registration_requests
-         (username, password_hash, email, phone, role, student_first_name, student_last_name, student_admission_number, parent_relationship)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING request_id, status`,
+         (username, password_hash, email, phone, role, first_name, last_name, student_first_name, student_last_name, student_admission_number, parent_relationship)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING request_id, status`,
         [
           cleanUsername,
           passwordHash,
           cleanEmail || null,
           cleanPhone || null,
           role,
+          cleanFirstName || null,
+          cleanLastName || null,
           cleanStudentFirst || null,
           cleanStudentLast || null,
           cleanAdmissionNumber || null,
