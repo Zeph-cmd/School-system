@@ -1221,7 +1221,6 @@
 
     // ── Delete ──────────────────────────────────────
     async function deleteItem(resource, id) {
-      if (!confirm('Are you sure?')) return;
       const res = await api(`${API}/${resource}/${id}`, 'DELETE');
       if (res && !res.error) {
         showAlert('Deleted successfully');
@@ -1676,6 +1675,7 @@
       if (statusEl) statusEl.value = 'pending';
       if (searchEl) searchEl.value = '';
       loadApprovals();
+      showAlert('Approval filters cleared');
     }
 
     async function approveReg(id) {
