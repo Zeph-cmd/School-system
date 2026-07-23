@@ -848,6 +848,8 @@
     }
 
     loadParentUnreadCount();
+    // Auto-refresh notification badge every 30s for real-time updates
+    setInterval(loadParentUnreadCount, 30000);
   </script>
 </body>
 </html>

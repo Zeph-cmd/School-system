@@ -729,6 +729,8 @@
     buildAcademicYearOptions();
     loadAssignments();
     loadTeacherUnreadCount();
+    // Auto-refresh notification badge every 30s for real-time updates
+    setInterval(loadTeacherUnreadCount, 30000);
   </script>
 </body>
 </html>

@@ -335,6 +335,14 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="actionModalOverlay">
+    <div class="modal" style="max-width: 460px;">
+      <h2 id="actionModalTitle">Confirm</h2>
+      <p id="actionModalMessage" style="margin-bottom: 1rem; color: var(--text-light);"></p>
+      <form id="actionModalForm"></form>
+    </div>
+  </div>
+
   <script>
     const API = '/api/admin';
     const token = localStorage.getItem('token');
@@ -696,6 +704,56 @@
       if (e.target === e.currentTarget) closeSettingsModal();
     });
 
+    function openActionDialog({ title = 'Confirm', message = '', inputLabel = '', inputPlaceholder = '', okLabel = 'Confirm' } = {}) {
+      const overlay = document.getElementById('actionModalOverlay');
+      const titleEl = document.getElementById('actionModalTitle');
+      const messageEl = document.getElementById('actionModalMessage');
+      const form = document.getElementById('actionModalForm');
+      if (!overlay || !titleEl || !messageEl || !form) {
+        return Promise.resolve({ confirmed: false, value: '' });
+      }
+
+      return new Promise((resolve) => {
+        titleEl.textContent = title;
+        messageEl.textContent = message;
+        form.innerHTML = `${inputLabel ? `
+          <div class="form-group">
+            <label>${escHtml(inputLabel)}</label>
+            <input type="text" name="actionInput" placeholder="${escHtml(inputPlaceholder)}">
+          </div>
+        ` : ''}<div class="modal-actions">
+          <button type="button" class="btn" id="actionModalCancel">Cancel</button>
+          <button type="submit" class="btn btn-primary">${escHtml(okLabel)}</button>
+        </div>`;
+
+        const cleanup = () => {
+          overlay.classList.remove('show');
+          form.innerHTML = '';
+          form.onsubmit = null;
+          overlay.onclick = null;
+        };
+
+        const finish = (confirmed) => {
+          const value = inputLabel ? String(form.elements.actionInput?.value || '').trim() : '';
+          cleanup();
+          resolve({ confirmed, value });
+        };
+
+        form.onsubmit = (e) => {
+          e.preventDefault();
+          finish(true);
+        };
+
+        overlay.onclick = (e) => {
+          if (e.target === overlay) finish(false);
+        };
+
+        form.querySelector('#actionModalCancel')?.addEventListener('click', () => finish(false));
+        overlay.classList.add('show');
+        form.querySelector('input[name="actionInput"]')?.focus();
+      });
+    }
+
     // ── Students ────────────────────────────────────
     async function loadStudents() {
       const data = await api(`${API}/students`);
@@ -1002,8 +1060,12 @@
           btn.addEventListener('click', async () => {
             const selected = list.find((x) => Number(x.template_id) === Number(btn.dataset.templateId));
             if (!selected) return;
-            const ok = confirm(`Remove tuition form ${selected.billing_period} (${selected.term}, ${selected.academic_year})?`);
-            if (!ok) return;
+            const { confirmed } = await openActionDialog({
+              title: 'Remove tuition form',
+              message: `Remove tuition form ${selected.billing_period} (${selected.term}, ${selected.academic_year})?`,
+              okLabel: 'Remove',
+            });
+            if (!confirmed) return;
             const res = await api(`${API}/classes/${classId}/tuition/${selected.template_id}`, 'DELETE');
             if (res && !res.error) {
               showAlert(res.message || 'Tuition form removed');
@@ -1031,8 +1093,12 @@
 
         let res = await api(`${API}/classes/${classId}/tuition`, 'POST', payload);
         if (res?.needs_confirmation) {
-          const ok = confirm('A tuition form for the same period already exists. Do you want to proceed and replace it?');
-          if (!ok) return;
+          const { confirmed } = await openActionDialog({
+            title: 'Replace tuition form',
+            message: 'A tuition form for the same period already exists. Replace it?',
+            okLabel: 'Replace',
+          });
+          if (!confirmed) return;
           payload.confirm_replace = true;
           res = await api(`${API}/classes/${classId}/tuition`, 'POST', payload);
         }
@@ -1071,6 +1137,8 @@
       const termSettings = await api(`${API}/current-term-settings`);
       const initialYear = settings?.current_academic_year || '';
       const initialTerm = termSettings?.current_term || '';
+      const modalForm = document.getElementById('modalForm');
+      const modalTitle = document.getElementById('modalTitle');
 
       const loadBreakdown = async (year, term) => {
         const q = new URLSearchParams();
@@ -1079,68 +1147,143 @@
         return api(`${API}/students/${studentId}/tuition?${q.toString()}`);
       };
 
-      const data = await loadBreakdown(initialYear, initialTerm);
-      const rows = data?.rows || [];
-      const totals = data?.totals || { amount_due: 0, amount_paid: 0, amount_outstanding: 0 };
-
-      const renderRows = (list) => list.map(r => `<tr>
-        <td>${escHtml(r.academic_year || '-')}</td>
-        <td>${escHtml(r.term || '-')}</td>
-        <td>${escHtml(r.billing_cycle || '-')}</td>
-        <td>${escHtml(r.billing_period || '-')}</td>
-        <td>$${parseFloat(r.amount_due || 0).toFixed(2)}</td>
-        <td>$${parseFloat(r.amount_paid || 0).toFixed(2)}</td>
-        <td>$${parseFloat(r.amount_outstanding || 0).toFixed(2)}</td>
-      </tr>`).join('') || '<tr><td colspan="7">No tuition records for selected filters.</td></tr>';
-
-      const form = document.getElementById('modalForm');
-      document.getElementById('modalTitle').textContent = `Tuition View - ${studentName}`;
-      form.innerHTML = `
-        <div class="alert" style="margin-bottom:0.8rem;">Shows tuition amounts recorded for the selected year and term.</div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Academic Year</label>
-            <input type="text" id="tuitionViewYear" value="${escHtml(initialYear)}" placeholder="YYYY/YYYY">
-          </div>
-          <div class="form-group">
-            <label>Term</label>
-            <select id="tuitionViewTerm">
-              <option value="">All Terms</option>
-              ${['Term 1','Term 2','Term 3'].map(t => `<option value="${t}" ${initialTerm === t ? 'selected' : ''}>${t}</option>`).join('')}
-            </select>
-          </div>
-        </div>
-        <div class="btn-group" style="margin-bottom:0.6rem;">
-          <button type="button" class="btn btn-sm" id="reloadTuitionBtn">Apply Filter</button>
-        </div>
-        <div class="stats-grid" style="margin-bottom:0.75rem;">
-          <div class="stat-card"><div class="label">Total Due</div><div class="value">$${Number(totals.amount_due || 0).toLocaleString()}</div></div>
-          <div class="stat-card green"><div class="label">Total Paid</div><div class="value">$${Number(totals.amount_paid || 0).toLocaleString()}</div></div>
-          <div class="stat-card red"><div class="label">Outstanding</div><div class="value">$${Number(totals.amount_outstanding || 0).toLocaleString()}</div></div>
-        </div>
-        <div class="table-container"><table><thead><tr><th>Year</th><th>Term</th><th>Cycle</th><th>Period</th><th>Due</th><th>Paid</th><th>Outstanding</th></tr></thead><tbody id="studentTuitionRows">${renderRows(rows)}</tbody></table></div>
-        <div class="modal-actions">
-          <button type="button" class="btn" onclick="closeModal()">Close</button>
-        </div>
-      `;
-
-      document.getElementById('reloadTuitionBtn').onclick = async () => {
-        const year = document.getElementById('tuitionViewYear')?.value?.trim() || '';
-        const term = document.getElementById('tuitionViewTerm')?.value || '';
-        const refreshed = await loadBreakdown(year, term);
-        const refreshedRows = refreshed?.rows || [];
-        const refreshedTotals = refreshed?.totals || { amount_due: 0, amount_paid: 0, amount_outstanding: 0 };
-        document.getElementById('studentTuitionRows').innerHTML = renderRows(refreshedRows);
-
-        const cards = form.querySelectorAll('.stats-grid .value');
-        if (cards.length >= 3) {
-          cards[0].textContent = `$${Number(refreshedTotals.amount_due || 0).toLocaleString()}`;
-          cards[1].textContent = `$${Number(refreshedTotals.amount_paid || 0).toLocaleString()}`;
-          cards[2].textContent = `$${Number(refreshedTotals.amount_outstanding || 0).toLocaleString()}`;
-        }
+      const refreshBreakdown = async (year = initialYear, term = initialTerm) => {
+        const data = await loadBreakdown(year, term);
+        const rows = data?.rows || [];
+        const totals = data?.totals || { amount_due: 0, amount_paid: 0, amount_outstanding: 0 };
+        const grades = data?.grades || [];
+        renderTuitionView(rows, totals, grades, year, term);
       };
 
-      form.onsubmit = (e) => e.preventDefault();
+      const renderRows = (list) => list.map(r => `
+        <tr>
+          <td>${escHtml(r.academic_year || '-')}</td>
+          <td>${escHtml(r.term || '-')}</td>
+          <td>${escHtml(r.billing_cycle || '-')}</td>
+          <td>${escHtml(r.billing_period || '-')}</td>
+          <td>${escHtml(r.description || '-')}</td>
+          <td>${escHtml(r.due_date ? r.due_date.split('T')[0] : '-')}</td>
+          <td>$${parseFloat(r.amount_due || 0).toFixed(2)}</td>
+          <td>$${parseFloat(r.amount_paid || 0).toFixed(2)}</td>
+          <td>$${parseFloat(r.amount_outstanding || 0).toFixed(2)}</td>
+          <td>${statusBadge(r.status || 'unpaid')}</td>
+          <td><button type="button" class="btn btn-sm tuition-row-edit" data-fee-id="${r.fee_id}">Edit</button></td>
+        </tr>`).join('') || '<tr><td colspan="11">No tuition records for selected filters.</td></tr>';
+
+      const renderGradesRows = (list) => list.map(g => `
+        <tr>
+          <td>${escHtml(g.academic_year || '-')}</td>
+          <td>${escHtml(g.term || '-')}</td>
+          <td>${escHtml(g.class_name || '-')}</td>
+          <td>${escHtml(g.subject_name || '-')}</td>
+          <td>${g.marks != null ? parseFloat(g.marks).toFixed(1) : '-'}</td>
+          <td>${escHtml(g.grade_letter || '-')}</td>
+          <td>${escHtml(g.remarks || '-')}</td>
+        </tr>`).join('') || '<tr><td colspan="7">No grade records for selected filters.</td></tr>';
+
+      const renderTuitionView = (rows, totals, grades, year, term) => {
+        modalTitle.textContent = `Tuition View - ${studentName}`;
+        modalForm.innerHTML = `
+          <div class="alert" style="margin-bottom:0.8rem;">Tuition & grade records for the student. Leave year/term blank to see <strong>full history since joining</strong>. Use Edit to update an individual tuition record.</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Academic Year (blank = all)</label>
+              <input type="text" id="tuitionViewYear" value="${escHtml(year || '')}" placeholder="YYYY/YYYY or blank for all">
+            </div>
+            <div class="form-group">
+              <label>Term</label>
+              <select id="tuitionViewTerm">
+                <option value="">All Terms</option>
+                ${['Term 1','Term 2','Term 3'].map(t => `<option value="${t}" ${term === t ? 'selected' : ''}>${t}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="btn-group" style="margin-bottom:0.6rem;">
+            <button type="button" class="btn btn-sm" id="reloadTuitionBtn">Apply Filter</button>
+            <button type="button" class="btn btn-sm btn-success" id="fullHistoryBtn">Show Full History</button>
+          </div>
+          <div class="stats-grid" style="margin-bottom:0.75rem;">
+            <div class="stat-card"><div class="label">Total Due</div><div class="value">$${Number(totals.amount_due || 0).toLocaleString()}</div></div>
+            <div class="stat-card green"><div class="label">Total Paid</div><div class="value">$${Number(totals.amount_paid || 0).toLocaleString()}</div></div>
+            <div class="stat-card red"><div class="label">Outstanding</div><div class="value">$${Number(totals.amount_outstanding || 0).toLocaleString()}</div></div>
+          </div>
+          <h4 style="margin:0.5rem 0 0.3rem; font-size:0.95rem;">Tuition / Fee Records</h4>
+          <div class="table-container"><table><thead><tr><th>Year</th><th>Term</th><th>Cycle</th><th>Period</th><th>Description</th><th>Due Date</th><th>Due</th><th>Paid</th><th>Outstanding</th><th>Status</th><th>Action</th></tr></thead><tbody id="studentTuitionRows">${renderRows(rows)}</tbody></table></div>
+          <h4 style="margin:0.8rem 0 0.3rem; font-size:0.95rem;">Grade Records</h4>
+          <div class="table-container"><table><thead><tr><th>Year</th><th>Term</th><th>Class</th><th>Subject</th><th>Marks</th><th>Grade</th><th>Remarks</th></tr></thead><tbody id="studentGradesRows">${renderGradesRows(grades)}</tbody></table></div>
+          <div class="modal-actions">
+            <button type="button" class="btn" onclick="closeModal()">Close</button>
+          </div>
+        `;
+
+        document.getElementById('reloadTuitionBtn').onclick = async () => {
+          const yearValue = document.getElementById('tuitionViewYear')?.value?.trim() || '';
+          const termValue = document.getElementById('tuitionViewTerm')?.value || '';
+          await refreshBreakdown(yearValue, termValue);
+        };
+
+        document.getElementById('fullHistoryBtn').onclick = async () => {
+          await refreshBreakdown('', '');
+        };
+
+        modalForm.querySelectorAll('.tuition-row-edit').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const row = rows.find((x) => Number(x.fee_id) === Number(btn.dataset.feeId));
+            if (!row) return;
+            await openStudentTuitionEditModal(row, year, term);
+          });
+        });
+      };
+
+      const openStudentTuitionEditModal = async (row, year, term) => {
+        openSettingsModal({
+          title: `Edit Tuition - ${studentName}`,
+          submitLabel: 'Save Changes',
+          fields: [
+            { name: 'description', label: 'Description', required: true },
+            { name: 'amount_due', label: 'Amount Due', type: 'number', required: true },
+            { name: 'amount_paid', label: 'Amount Paid', type: 'number', required: true },
+            { name: 'due_date', label: 'Due Date', type: 'date' },
+            { name: 'status', label: 'Status (auto-calculated if left blank)', type: 'select', options: ['', 'unpaid', 'partial', 'paid'] },
+          ],
+          initialValues: {
+            description: row.description || '',
+            amount_due: row.amount_due ?? '',
+            amount_paid: row.amount_paid ?? '',
+            due_date: row.due_date ? String(row.due_date).split('T')[0] : '',
+            status: '',
+          },
+          onSubmit: async (formData) => {
+            const amountDue = parseFloat(formData.amount_due || 0);
+            const amountPaid = parseFloat(formData.amount_paid || 0);
+            // Auto-calculate status if not explicitly set
+            let status = String(formData.status || '').trim();
+            if (!status) {
+              if (amountPaid <= 0) status = 'unpaid';
+              else if (amountPaid < amountDue) status = 'partial';
+              else status = 'paid';
+            }
+            const payload = {
+              description: String(formData.description || '').trim(),
+              amount_due: String(formData.amount_due || '').trim(),
+              amount_paid: String(formData.amount_paid || '').trim(),
+              due_date: String(formData.due_date || '').trim(),
+              status: status,
+            };
+            const res = await api(`${API}/fees/${row.fee_id}`, 'PUT', payload);
+            if (res && !res.error) {
+              showAlert(`Tuition updated and saved for ${studentName}`);
+              const activeYear = document.getElementById('tuitionViewYear')?.value?.trim() || year || '';
+              const activeTerm = document.getElementById('tuitionViewTerm')?.value || term || '';
+              await refreshBreakdown(activeYear, activeTerm);
+            }
+            return res;
+          },
+        });
+      };
+
+      await refreshBreakdown(initialYear, initialTerm);
+      modalForm.onsubmit = (e) => e.preventDefault();
       document.getElementById('modalOverlay').classList.add('show');
     }
 
@@ -1221,6 +1364,12 @@
 
     // ── Delete ──────────────────────────────────────
     async function deleteItem(resource, id) {
+      const { confirmed } = await openActionDialog({
+        title: 'Delete record',
+        message: 'Delete this record permanently?',
+        okLabel: 'Delete',
+      });
+      if (!confirmed) return;
       const res = await api(`${API}/${resource}/${id}`, 'DELETE');
       if (res && !res.error) {
         showAlert('Deleted successfully');
@@ -1250,7 +1399,12 @@
     async function reclassifyStudent(studentId, action) {
       const student = dataCache.students?.[studentId];
       const actionLabel = action === 'promote' ? 'promote' : action === 'demote' ? 'demote' : 'keep current class for';
-      if (!confirm(`Are you sure you want to ${actionLabel} ${student?.first_name || 'this student'} ${student?.last_name || ''}?`)) return;
+      const { confirmed } = await openActionDialog({
+        title: 'Confirm class change',
+        message: `Are you sure you want to ${actionLabel} ${student?.first_name || 'this student'} ${student?.last_name || ''}?`,
+        okLabel: action === 'keep' ? 'Keep' : 'Apply',
+      });
+      if (!confirmed) return;
 
       const res = await api(`${API}/students/${studentId}/reclassify`, 'POST', {
         action,
@@ -1672,14 +1826,19 @@
       const statusEl = document.getElementById('approvalStatusFilter');
       const searchEl = document.getElementById('approvalSearchFilter');
       if (roleEl) roleEl.value = '';
-      if (statusEl) statusEl.value = 'pending';
+      if (statusEl) statusEl.value = 'all';
       if (searchEl) searchEl.value = '';
       loadApprovals();
       showAlert('Approval filters cleared');
     }
 
     async function approveReg(id) {
-      if (!confirm('Approve this registration?')) return;
+      const { confirmed } = await openActionDialog({
+        title: 'Approve registration',
+        message: 'Approve this registration request?',
+        okLabel: 'Approve',
+      });
+      if (!confirmed) return;
       const res = await api(`${API}/pending-registrations/${id}/approve`, 'PUT');
       if (res && !res.error) {
         showAlert(res.message || 'Approved');
@@ -1691,8 +1850,14 @@
     }
 
     async function rejectReg(id) {
-      const reason = prompt('Decline reason (optional):');
-      if (reason === null) return; // cancelled
+      const { confirmed, value: reason } = await openActionDialog({
+        title: 'Decline registration',
+        message: 'Decline this registration request? Reason is optional.',
+        inputLabel: 'Decline reason',
+        inputPlaceholder: 'Optional reason',
+        okLabel: 'Decline',
+      });
+      if (!confirmed) return;
       const res = await api(`${API}/pending-registrations/${id}/reject`, 'PUT', { reason });
       if (res && !res.error) {
         showAlert('Declined');
@@ -1704,7 +1869,12 @@
     }
 
     async function reopenReg(id) {
-      if (!confirm('Reopen this rejected request and move it back to pending?')) return;
+      const { confirmed } = await openActionDialog({
+        title: 'Reopen request',
+        message: 'Move this rejected request back to pending?',
+        okLabel: 'Reopen',
+      });
+      if (!confirmed) return;
       const res = await api(`${API}/pending-registrations/${id}/reopen`, 'PUT');
       if (res && !res.error) {
         showAlert(res.message || 'Request reopened');
@@ -1750,7 +1920,12 @@
     }
 
     async function approveGradeChange(id) {
-      if (!confirm('Approve and apply this grade change?')) return;
+      const { confirmed } = await openActionDialog({
+        title: 'Approve grade change',
+        message: 'Approve and apply this grade change?',
+        okLabel: 'Approve',
+      });
+      if (!confirmed) return;
       const res = await api(`${API}/pending-grade-changes/${id}/approve`, 'PUT');
       if (res && !res.error) {
         showAlert(res.message || 'Grade change approved');
@@ -1762,8 +1937,14 @@
     }
 
     async function rejectGradeChange(id) {
-      const reason = prompt('Rejection reason (optional):');
-      if (reason === null) return;
+      const { confirmed, value: reason } = await openActionDialog({
+        title: 'Reject grade change',
+        message: 'Reject this grade change? Reason is optional.',
+        inputLabel: 'Rejection reason',
+        inputPlaceholder: 'Optional reason',
+        okLabel: 'Reject',
+      });
+      if (!confirmed) return;
       const res = await api(`${API}/pending-grade-changes/${id}/reject`, 'PUT', { reason });
       if (res && !res.error) {
         showAlert(res.message || 'Grade change rejected');
@@ -1921,6 +2102,9 @@
     // Initial load
     loadDashboard();
     loadNotifBadge();
+
+    // Auto-refresh notification badges every 30s for real-time updates
+    setInterval(loadNotifBadge, 30000);
 
     // ── Record Lookup ───────────────────────────────
     async function loadRecord() {

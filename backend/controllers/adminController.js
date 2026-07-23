@@ -1424,6 +1424,7 @@ async function getStudentTuitionBreakdown(req, res) {
       `SELECT
          f.fee_id,
          f.description,
+         f.due_date,
          f.amount_due,
          f.amount_paid,
          GREATEST(COALESCE(f.amount_due, 0) - COALESCE(f.amount_paid, 0), 0) AS amount_outstanding,
@@ -1448,7 +1449,39 @@ async function getStudentTuitionBreakdown(req, res) {
       return acc;
     }, { amount_due: 0, amount_paid: 0, amount_outstanding: 0 });
 
-    res.json({ rows: result.rows, totals });
+    // Also fetch grades history for this student (same year/term filters)
+    const gradeParams = [id];
+    let gradeWhere = "WHERE e.student_id = $1";
+    if (academicYear) {
+      gradeParams.push(academicYear);
+      gradeWhere += ` AND e.academic_year = $${gradeParams.length}`;
+    }
+    if (term) {
+      gradeParams.push(term);
+      gradeWhere += ` AND g.term = $${gradeParams.length}`;
+    }
+
+    const gradesResult = await pool.query(
+      `SELECT
+         g.grade_id,
+         g.term,
+         g.marks,
+         g.grade_letter,
+         g.remarks,
+         g.created_at,
+         s.subject_name,
+         e.academic_year,
+         c.class_name
+       FROM grades g
+       JOIN enrollments e ON e.enrollment_id = g.enrollment_id
+       JOIN subjects s ON s.subject_id = g.subject_id
+       JOIN classes c ON c.class_id = e.class_id
+       ${gradeWhere}
+       ORDER BY e.academic_year DESC, g.term, s.subject_name, g.grade_id`,
+      gradeParams
+    );
+
+    res.json({ rows: result.rows, totals, grades: gradesResult.rows });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch student tuition breakdown' });
   }

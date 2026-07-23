@@ -81,18 +81,18 @@ The admin has full control of the school system. Accessible from the **Admin Pan
 - **View** all homework posted by teachers
 - **Delete** inappropriate or incorrect homework entries
 
-### Pending Approvals (NEW)
+### Pending Approvals 
 - **View** all registration requests (pending, approved, rejected)
 - **Approve** a pending registration — this creates the user account, assigns the role, and for parents: auto-creates a parent record and links to the verified student
 - **Reject** a registration with an optional reason
 - A **notification badge** appears on the sidebar showing the count of pending requests
 
-### Grade Change Approvals (NEW)
+### Grade Change Approvals
 - Teachers submit grade changes
 - Admin reviews pending grade-change requests
 - Admin approves/rejects requests before parents can see updated grades
 
-### Audit Logs (NEW)
+### Audit Logs 
 - **View** a full log of every action in the system: who did what, when, on which table, and what data changed
 - **Filter** logs by action type (CREATE, UPDATE, DELETE, LOGIN) and/or table name
 - Tracks all admin, teacher, and system actions
@@ -122,12 +122,12 @@ Teachers access the **Teacher Panel** after logging in. They can only see and ma
 - Fill in marks, grades, and optional remarks
 - Final visibility to parents depends on admin grade approval workflow
 
-### Homework (NEW)
+### Homework
 - **Add homework** for their assigned classes: title, description, subject, class, due date
 - **View** all homework they've posted
 - **Edit** or **delete** their own homework entries
 
-### Messages (NEW)
+### Messages
 - Teachers can privately message only parents related to their assigned classes
 - Teachers cannot message admin through teacher messaging flow
 
@@ -154,11 +154,11 @@ Parents access the **Parent Panel** after logging in. They can only see data rel
 - View fee records for their children
 - See description, amount due, amount paid, due date, and payment status
 
-### Homework (NEW)
+### Homework
 - View homework assigned to their children's classes
 - See title, description, subject, class, teacher, and due date
 
-### Add Child Request (NEW)
+### Add Child Request
 - Parent can submit additional child-link request from parent panel
 - Request is queued for admin approval
 - Duplicate parent-student links are blocked
