@@ -27,6 +27,7 @@ router.put('/students/:id', admin.updateStudent);
 router.delete('/students/:id', admin.deleteStudent);
 router.post('/students/:id/promote', admin.promoteStudent);
 router.post('/students/:id/reclassify', admin.reclassifyStudent);
+router.put('/students/:id/tuition', admin.updateStudentTuition);
 
 // Teachers CRUD
 router.get('/teachers', admin.getTeachers);
@@ -73,6 +74,7 @@ router.get('/students/:id/tuition', admin.getStudentTuitionBreakdown);
 // Teaching Assignments
 router.get('/assignments', admin.getAssignments);
 router.post('/assignments', admin.createAssignment);
+router.post('/assignments/bulk', admin.createBulkAssignments);
 router.put('/assignments/:id', admin.updateAssignment);
 router.delete('/assignments/:id', admin.deleteAssignment);
 

@@ -1201,6 +1201,7 @@
           <div class="btn-group" style="margin-bottom:0.6rem;">
             <button type="button" class="btn btn-sm" id="reloadTuitionBtn">Apply Filter</button>
             <button type="button" class="btn btn-sm btn-success" id="fullHistoryBtn">Show Full History</button>
+            <button type="button" class="btn btn-sm btn-primary" id="editStudentTuitionBtn">Edit Student Tuition</button>
           </div>
           <div class="stats-grid" style="margin-bottom:0.75rem;">
             <div class="stat-card"><div class="label">Total Due</div><div class="value">$${Number(totals.amount_due || 0).toLocaleString()}</div></div>
@@ -1226,12 +1227,51 @@
           await refreshBreakdown('', '');
         };
 
+        document.getElementById('editStudentTuitionBtn').onclick = async () => {
+          await openEditStudentTuitionModal(studentId, studentName, year, term);
+        };
+
         modalForm.querySelectorAll('.tuition-row-edit').forEach((btn) => {
           btn.addEventListener('click', async () => {
             const row = rows.find((x) => Number(x.fee_id) === Number(btn.dataset.feeId));
             if (!row) return;
             await openStudentTuitionEditModal(row, year, term);
           });
+        });
+      };
+
+      const openEditStudentTuitionModal = async (studentId, studentName, year, term) => {
+        const studentData = await api(`${API}/students/${studentId}`);
+        if (!studentData) {
+          showAlert('Failed to load student data', 'error');
+          return;
+        }
+
+        openSettingsModal({
+          title: `Edit Student Tuition - ${studentName}`,
+          submitLabel: 'Save Changes',
+          fields: [
+            { name: 'tuition_amount_due', label: 'Tuition Amount Due', type: 'number', required: true },
+            { name: 'tuition_amount_paid', label: 'Tuition Amount Paid', type: 'number', required: true },
+          ],
+          initialValues: {
+            tuition_amount_due: studentData.tuition_amount_due || 0,
+            tuition_amount_paid: studentData.tuition_amount_paid || 0,
+          },
+          onSubmit: async (formData) => {
+            const payload = {
+              tuition_amount_due: parseFloat(formData.tuition_amount_due || 0),
+              tuition_amount_paid: parseFloat(formData.tuition_amount_paid || 0),
+            };
+            const res = await api(`${API}/students/${studentId}/tuition`, 'PUT', payload);
+            if (res && !res.error) {
+              showAlert(`Student tuition updated successfully`);
+              const activeYear = document.getElementById('tuitionViewYear')?.value?.trim() || year || '';
+              const activeTerm = document.getElementById('tuitionViewTerm')?.value || term || '';
+              await refreshBreakdown(activeYear, activeTerm);
+            }
+            return res;
+          },
         });
       };
 
@@ -2397,7 +2437,7 @@
     async function sendReply(msgId) {
       const body = document.getElementById('replyBody').value.trim();
       if (!body) return;
-      const res = await api(`${API}/messages/${msgId}/reply`, 'POST', { body });
+      const res = await api(`${API}/fees/${msgId}/reply`, 'POST', { body });
       if (res && !res.error) {
         openConversation(msgId);
       } else {

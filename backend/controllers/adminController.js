@@ -1927,6 +1927,81 @@ async function createAssignment(req, res) {
   }
 }
 
+// BULK create assignments: one teacher -> many subjects x many classes for a given year/term
+// Body: { teacher_id, subject_ids: [..], class_ids: [..], academic_year, term }
+async function createBulkAssignments(req, res) {
+  try {
+    const { teacher_id, subject_ids, class_ids, academic_year, term } = req.body;
+    if (!teacher_id) return res.status(400).json({ error: 'Missing teacher_id' });
+    const subjectIdList = Array.isArray(subject_ids) ? subject_ids.map(Number).filter(Boolean) : [];
+    const classIdList = Array.isArray(class_ids) ? class_ids.map(Number).filter(Boolean) : [];
+    if (subjectIdList.length === 0) return res.status(400).json({ error: 'Select at least one subject' });
+    if (classIdList.length === 0) return res.status(400).json({ error: 'Select at least one class' });
+
+    const normTerm = normalizeTerm(term);
+    if (!normTerm) return res.status(400).json({ error: 'term must be one of: Term 1, Term 2, Term 3' });
+    const yearToUse = String(academic_year || '').trim() || await getCurrentAcademicYearSetting();
+
+    // Validate teacher + all subjects + all classes exist
+    const teacherRes = await pool.query('SELECT first_name, last_name FROM teachers WHERE teacher_id = $1', [teacher_id]);
+    if (teacherRes.rows.length === 0) return res.status(400).json({ error: 'Invalid teacher_id' });
+    const subjectsRes = await pool.query('SELECT subject_id FROM subjects WHERE subject_id = ANY($1)', [subjectIdList]);
+    if (subjectsRes.rows.length !== subjectIdList.length) return res.status(400).json({ error: 'One or more invalid subject_id' });
+    const classesRes = await pool.query('SELECT class_id FROM classes WHERE class_id = ANY($1)', [classIdList]);
+    if (classesRes.rows.length !== classIdList.length) return res.status(400).json({ error: 'One or more invalid class_id' });
+
+    // Fetch existing exact-duplicate assignments (teacher+subject+class+year+term) to skip them
+    const existingRes = await pool.query(
+      `SELECT subject_id, class_id FROM teaching_assignments
+       WHERE teacher_id = $1 AND academic_year = $2 AND term = $3
+         AND subject_id = ANY($4) AND class_id = ANY($5)`,
+      [teacher_id, yearToUse, normTerm, subjectIdList, classIdList]
+    );
+    const existingKey = new Set(existingRes.rows.map(r => `${r.subject_id}:${r.class_id}`));
+
+    const created = [];
+    const skipped = [];
+    const overlapWarnings = [];
+
+    for (const subjectId of subjectIdList) {
+      for (const classId of classIdList) {
+        const key = `${subjectId}:${classId}`;
+        if (existingKey.has(key)) {
+          skipped.push({ subject_id: subjectId, class_id: classId, reason: 'duplicate' });
+          continue;
+        }
+        // Check if another teacher already teaches this subject+class+year (any term) - warn only
+        const overlap = await pool.query(`
+          SELECT t.first_name || ' ' || t.last_name AS teacher_name
+          FROM teaching_assignments ta
+          JOIN teachers t ON ta.teacher_id = t.teacher_id
+          WHERE ta.subject_id = $1 AND ta.class_id = $2 AND ta.teacher_id <> $3 AND ta.academic_year = $4
+        `, [subjectId, classId, teacher_id, yearToUse]);
+        if (overlap.rows.length > 0) {
+          overlapWarnings.push(`${subjectId}/${classId}: already assigned to ${overlap.rows.map(r => r.teacher_name).join(', ')}`);
+        }
+        const result = await pool.query(
+          `INSERT INTO teaching_assignments (teacher_id, subject_id, class_id, academic_year, term)
+           VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+          [teacher_id, subjectId, classId, yearToUse, normTerm]
+        );
+        await req.audit('CREATE', 'teaching_assignments', result.rows[0].assignment_id, null, result.rows[0]);
+        created.push(result.rows[0]);
+      }
+    }
+
+    res.status(201).json({
+      created: created.length,
+      skipped_duplicates: skipped.length,
+      assignments: created,
+      warnings: overlapWarnings,
+      message: `Created ${created.length} assignment(s)${skipped.length ? `, skipped ${skipped.length} duplicate(s)` : ''}${overlapWarnings.length ? `. Notices: ${overlapWarnings.join('; ')}` : ''}`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: `Failed to create bulk assignments: ${err.message}` });
+  }
+}
+
 async function deleteAssignment(req, res) {
   try {
     const { id } = req.params;
@@ -2907,6 +2982,47 @@ async function getParentUsers(req, res) {
   }
 }
 
+// Update student tuition amounts (base tuition fields on student record)
+async function updateStudentTuition(req, res) {
+  try {
+    const { id } = req.params;
+    const { tuition_amount_due, tuition_amount_paid } = req.body;
+    
+    // Validate inputs
+    const amountDue = toMoney(tuition_amount_due);
+    const amountPaid = toMoney(tuition_amount_paid);
+    
+    if (Number.isNaN(amountDue) || amountDue < 0) {
+      return res.status(400).json({ error: 'tuition_amount_due must be a valid non-negative number' });
+    }
+    if (Number.isNaN(amountPaid) || amountPaid < 0) {
+      return res.status(400).json({ error: 'tuition_amount_paid must be a valid non-negative number' });
+    }
+    
+    // Get current student record
+    const old = await pool.query('SELECT * FROM students WHERE student_id = $1', [id]);
+    if (old.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
+    const prev = old.rows[0];
+    
+    // Update student record
+    const result = await pool.query(
+      `UPDATE students SET
+       tuition_amount_due = $1,
+       tuition_amount_paid = $2
+       WHERE student_id = $3 RETURNING *`,
+      [amountDue, amountPaid, id]
+    );
+    
+    // Audit the change
+    await req.audit('UPDATE', 'students', parseInt(id), prev, result.rows[0]);
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('updateStudentTuition error:', err);
+    res.status(500).json({ error: 'Failed to update student tuition' });
+  }
+}
+
 module.exports = {
   getDashboard, getGradeEditStatus, setGradeEditStatus, getAdminRecoveryEmail, setAdminRecoveryEmail,
   getAcademicYearSettings, setAcademicYearSettings,
@@ -2919,7 +3035,7 @@ module.exports = {
   getSubjects, createSubject, updateSubject, deleteSubject,
   getEnrollments, createEnrollment, updateEnrollment, deleteEnrollment,
   getFees, createFee, updateFee,
-  getAssignments, createAssignment, updateAssignment, deleteAssignment,
+  getAssignments, createAssignment, createBulkAssignments, updateAssignment, deleteAssignment,
   getUsers, getRoles,
   getParentStudentLinks, createParentStudentLink,
   getActivityDashboard, getAuditLogs,
@@ -2930,4 +3046,5 @@ module.exports = {
   getStudentRecord,
   getTeacherRecord,
   sendBroadcast, sendPrivateMessage, getAdminMessages, getConversation, replyMessage, getParentUsers,
+  updateStudentTuition,
 };
