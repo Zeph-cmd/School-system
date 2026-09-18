@@ -173,7 +173,7 @@
         </div>
         <div class="table-container">
           <table><thead><tr>
-            <th>ID</th><th>Class</th><th>Student</th><th>Type</th><th>Term</th><th>Description</th><th>Due</th><th>Paid</th><th>Status</th><th>Actions</th>
+            <th>ID</th><th>Class</th><th>Student</th><th>Type</th><th>Term</th><th>Due</th><th>Paid</th><th>Status</th><th>Actions</th>
           </tr></thead><tbody id="feesTable"></tbody></table>
         </div>
       </div>
@@ -1379,7 +1379,7 @@
           && (!term || rowTerm === term);
       });
       document.getElementById('feesTable').innerHTML = rows.map(f => `<tr>
-        <td>${f.fee_id}</td><td>${f.class_name || '-'}</td><td>${f.student_name}</td><td>${escHtml(f.fee_type || 'general')}</td><td>${escHtml(f.term || '-')}</td><td>${f.description || '-'}</td>
+        <td>${f.fee_id}</td><td>${f.class_name || '-'}</td><td>${f.student_name}</td><td>${escHtml(f.fee_type || 'general')}</td><td>${escHtml(f.term || '-')}</td>
         <td>$${parseFloat(f.amount_due).toFixed(2)}</td><td>$${parseFloat(f.amount_paid).toFixed(2)}</td>
         <td>${statusBadge(f.status)}</td>
         <td><button class="btn btn-success btn-sm" onclick="openUpdateModal('fees',${f.fee_id})">Update</button></td>
@@ -1564,7 +1564,7 @@
         title: 'Update Fee',
         urlFn: (id) => `${API}/fees/${id}`,
         fields: [
-          { name: 'description', label: 'Description' },
+          { name: 'fee_type', label: 'Fee Type', type: 'select', options: ['general', 'tuition'] },
           { name: 'amount_due', label: 'Amount Due', type: 'number', required: true },
           { name: 'amount_paid', label: 'Amount Paid', type: 'number' },
           { name: 'due_date', label: 'Due Date', type: 'date' },
@@ -1704,7 +1704,6 @@
           { name: 'admission_number', label: 'ADM Number', required: true, placeholder: 'e.g. ADM-2026-123456' },
           { name: 'fee_type', label: 'Fee Type', type: 'select', options: ['general', 'tuition'], required: true },
           { name: 'term', label: 'Term', type: 'select', options: ['Term 1', 'Term 2', 'Term 3'], required: true },
-          { name: 'description', label: 'Description' },
           { name: 'amount_due', label: 'Amount Due', type: 'number', required: true },
           { name: 'due_date', label: 'Due Date', type: 'date' },
         ],

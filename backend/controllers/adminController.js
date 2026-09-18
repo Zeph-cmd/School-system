@@ -1813,7 +1813,7 @@ async function createFee(req, res) {
 async function updateFee(req, res) {
   try {
     const { id } = req.params;
-    const { description, amount_due, amount_paid, due_date, status } = req.body;
+    const { fee_type, amount_due, amount_paid, due_date, status } = req.body;
     const old = await pool.query('SELECT * FROM fees WHERE fee_id = $1', [id]);
     if (old.rows.length === 0) return res.status(404).json({ error: 'Fee not found' });
 
@@ -1821,16 +1821,20 @@ async function updateFee(req, res) {
     if (status && !allowedStatuses.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Allowed: ${allowedStatuses.join(', ')}` });
     }
+    const normalizedFeeType = String(fee_type || '').trim().toLowerCase();
+    if (normalizedFeeType && !['general', 'tuition'].includes(normalizedFeeType)) {
+      return res.status(400).json({ error: 'fee_type must be either general or tuition' });
+    }
 
     const result = await pool.query(
       `UPDATE fees SET
-         description = COALESCE(NULLIF($1, ''), description),
-         amount_due = COALESCE(NULLIF($2, '')::numeric, amount_due),
-         amount_paid = COALESCE(NULLIF($3, '')::numeric, amount_paid),
-         due_date = COALESCE(NULLIF($4, '')::date, due_date),
-         status = COALESCE(NULLIF($5, ''), status)
+        fee_type = COALESCE(NULLIF($1, ''), fee_type),
+        amount_due = COALESCE(NULLIF($2, '')::numeric, amount_due),
+        amount_paid = COALESCE(NULLIF($3, '')::numeric, amount_paid),
+        due_date = COALESCE(NULLIF($4, '')::date, due_date),
+        status = COALESCE(NULLIF($5, ''), status)
        WHERE fee_id=$6 RETURNING *`,
-      [description ?? '', amount_due ?? '', amount_paid ?? '', due_date ?? '', status ?? '', id]
+      [normalizedFeeType, amount_due ?? '', amount_paid ?? '', due_date ?? '', status ?? '', id]
     );
     await req.audit('UPDATE', 'fees', parseInt(id), old.rows[0], result.rows[0]);
     res.json(result.rows[0]);
