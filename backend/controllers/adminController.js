@@ -1606,13 +1606,14 @@ async function getSubjects(req, res) {
 
 async function createSubject(req, res) {
   try {
-    const { subject_code, subject_name, description } = req.body;
-    if (!subject_code || !subject_name) {
+    const { subject_name, description } = req.body;
+    if (!subject_name) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    const subjectCode = await generateUniqueCode({ prefix: 'SUB', table: 'subjects', column: 'subject_code', digits: 6 });
     const result = await pool.query(
       'INSERT INTO subjects (subject_code, subject_name, description) VALUES ($1,$2,$3) RETURNING *',
-      [subject_code, subject_name, description || null]
+      [subjectCode, subject_name, description || null]
     );
     await req.audit('CREATE', 'subjects', result.rows[0].subject_id, null, result.rows[0]);
     res.status(201).json(result.rows[0]);
@@ -1624,12 +1625,12 @@ async function createSubject(req, res) {
 async function updateSubject(req, res) {
   try {
     const { id } = req.params;
-    const { subject_code, subject_name, description, is_active } = req.body;
+    const { subject_name, description, is_active } = req.body;
     const old = await pool.query('SELECT * FROM subjects WHERE subject_id = $1', [id]);
     if (old.rows.length === 0) return res.status(404).json({ error: 'Subject not found' });
     const result = await pool.query(
-      'UPDATE subjects SET subject_code=$1, subject_name=$2, description=$3, is_active=$4 WHERE subject_id=$5 RETURNING *',
-      [subject_code, subject_name, description, is_active, id]
+      'UPDATE subjects SET subject_name=$1, description=$2, is_active=$3 WHERE subject_id=$4 RETURNING *',
+      [subject_name, description, is_active, id]
     );
     await req.audit('UPDATE', 'subjects', parseInt(id), old.rows[0], result.rows[0]);
     res.json(result.rows[0]);
@@ -3027,6 +3028,21 @@ async function updateStudentTuition(req, res) {
        WHERE student_id = $3 RETURNING *`,
       [amountDue, amountPaid, id]
     );
+
+    const feeRows = await pool.query(
+      `SELECT f.fee_id
+       FROM fees f
+       JOIN enrollments e ON e.enrollment_id = f.enrollment_id
+       WHERE e.student_id = $1 AND f.fee_type = 'tuition'`,
+      [id]
+    );
+    const status = deriveFeeStatus(amountDue, amountPaid);
+    for (const fee of feeRows.rows) {
+      await pool.query(
+        'UPDATE fees SET amount_due = $1, amount_paid = $2, status = $3 WHERE fee_id = $4',
+        [amountDue, amountPaid, status, fee.fee_id]
+      );
+    }
     
     // Audit the change
     await req.audit('UPDATE', 'students', parseInt(id), prev, result.rows[0]);

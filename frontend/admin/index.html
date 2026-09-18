@@ -184,7 +184,7 @@
         </div>
         <div class="table-container">
           <table><thead><tr>
-            <th>ID</th><th>Code</th><th>Name</th><th>Active</th><th>Actions</th>
+            <th>ID</th><th>Name</th><th>Active</th><th>Actions</th>
           </tr></thead><tbody id="subjectsTable"></tbody></table>
         </div>
       </div>
@@ -1407,7 +1407,7 @@
       dataCache.subjects = {};
       data.forEach(s => dataCache.subjects[s.subject_id] = s);
       document.getElementById('subjectsTable').innerHTML = data.map(s => `<tr>
-        <td>${s.subject_id}</td><td>${s.subject_code}</td><td>${s.subject_name}</td>
+        <td>${s.subject_id}</td><td>${s.subject_name}</td>
         <td>${s.is_active ? '&#9989;' : '&#10060;'}</td>
         <td>${editDropdown('subjects', s.subject_id, { onlyDelete: true })}</td>
       </tr>`).join('');
@@ -1619,7 +1619,6 @@
         title: 'Update Subject',
         urlFn: (id) => `${API}/subjects/${id}`,
         fields: [
-          { name: 'subject_code', label: 'Subject Code', required: true },
           { name: 'subject_name', label: 'Subject Name', required: true },
           { name: 'description', label: 'Description' },
           { name: 'is_active', label: 'Active', type: 'select', options: ['true','false'] },
@@ -1757,7 +1756,6 @@
         title: 'Add Subject',
         url: `${API}/subjects`,
         fields: [
-          { name: 'subject_code', label: 'Subject Code', required: true },
           { name: 'subject_name', label: 'Subject Name', required: true },
           { name: 'description', label: 'Description' },
         ],

@@ -36,7 +36,7 @@
         <h1>My Teaching Assignments</h1>
         <div class="table-container">
           <table><thead><tr>
-            <th>Subject</th><th>Code</th><th>Class</th><th>Level</th><th>Year</th><th>Term</th>
+            <th>Subject</th><th>Class</th><th>Level</th><th>Year</th><th>Term</th>
           </tr></thead><tbody id="assignmentsTable"></tbody></table>
         </div>
       </div>
@@ -361,7 +361,7 @@
       await loadGradeEditStatus();
 
       document.getElementById('assignmentsTable').innerHTML = data.map(a => `<tr>
-        <td>${a.subject_name}</td><td>${a.subject_code}</td><td>${a.class_name}</td>
+        <td>${a.subject_name}</td><td>${a.class_name}</td>
         <td>${a.level}</td><td>${a.academic_year}</td><td>${a.term || '-'}</td>
       </tr>`).join('') || '<tr><td colspan="6">No assignments found. Ask admin to link your email.</td></tr>';
 
