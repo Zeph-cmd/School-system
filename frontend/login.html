@@ -252,6 +252,31 @@
     </div>
   </div>
 
+  <div class="fp-modal-overlay" id="teacherForgotModal">
+    <div class="fp-modal">
+      <h3>Teacher Credential Recovery</h3>
+      <p>Enter your staff details exactly as saved in school records.</p>
+      <form id="teacherForgotForm">
+        <div class="form-group">
+          <label for="tfFirstName">First Name</label>
+          <input type="text" id="tfFirstName" required autocomplete="given-name">
+        </div>
+        <div class="form-group">
+          <label for="tfLastName">Last Name</label>
+          <input type="text" id="tfLastName" required autocomplete="family-name">
+        </div>
+        <div class="form-group">
+          <label for="tfEmployeeNumber">Employee Number</label>
+          <input type="text" id="tfEmployeeNumber" required>
+        </div>
+        <div class="fp-actions">
+          <button type="button" class="btn" onclick="closeTeacherForgotModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Find credentials</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     const alertDiv = document.getElementById('alert');
     let selectedLoginRole = null;
@@ -330,7 +355,7 @@
         emailGroup.style.display = 'block';
         forgotWrap.style.display = 'none';
         roleForgotWrap.style.display = 'block';
-        roleForgotLink.textContent = selectedLoginRole === 'parent' ? 'Forgot password?' : 'Forgot credentials?';
+        roleForgotLink.textContent = 'Forgot credentials?';
         passwordInput.required = false;
         emailInput.required = true;
         passwordInput.value = '';
@@ -479,40 +504,7 @@
       }
     }
 
-    async function roleForgotCredentials() {
-      if (selectedLoginRole !== 'teacher' && selectedLoginRole !== 'parent') return;
-
-      let body;
-      if (selectedLoginRole === 'parent') {
-        const childFirst = prompt('Enter child first name (exact as in school records):');
-        if (childFirst === null) return;
-        const childLast = prompt('Enter child last name (exact):');
-        if (childLast === null) return;
-        const childAdm = prompt('Enter child ADM number (exact):');
-        if (childAdm === null) return;
-
-        body = {
-          role: 'parent',
-          child_first_name: childFirst,
-          child_last_name: childLast,
-          child_admission_number: childAdm,
-        };
-      } else {
-        const firstName = prompt('Enter your first name (exact as school record):');
-        if (firstName === null) return;
-        const lastName = prompt('Enter your last name (exact):');
-        if (lastName === null) return;
-        const employeeNo = prompt('Enter your employee number (exact):');
-        if (employeeNo === null) return;
-
-        body = {
-          role: 'teacher',
-          first_name: firstName,
-          last_name: lastName,
-          employee_number: employeeNo,
-        };
-      }
-
+    async function findRoleCredentials(body) {
       try {
         const res = await fetch('/api/auth/forgot-credentials', {
           method: 'POST',
@@ -538,7 +530,7 @@
         openParentForgotModal();
         return;
       }
-      roleForgotCredentials();
+      openTeacherForgotModal();
     }
 
     function toggleLoginPassword() {
@@ -568,8 +560,42 @@
       document.getElementById('parentForgotModal').classList.remove('show');
     }
 
+    function openTeacherForgotModal() {
+      if (selectedLoginRole !== 'teacher') return;
+      document.getElementById('teacherForgotForm').reset();
+      document.getElementById('teacherForgotModal').classList.add('show');
+      document.getElementById('tfFirstName').focus();
+    }
+
+    function closeTeacherForgotModal() {
+      document.getElementById('teacherForgotModal').classList.remove('show');
+    }
+
     document.getElementById('parentForgotModal').addEventListener('click', (e) => {
       if (e.target.id === 'parentForgotModal') closeParentForgotModal();
+    });
+
+    document.getElementById('teacherForgotModal').addEventListener('click', (e) => {
+      if (e.target.id === 'teacherForgotModal') closeTeacherForgotModal();
+    });
+
+    document.getElementById('teacherForgotForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const first_name = document.getElementById('tfFirstName').value.trim();
+      const last_name = document.getElementById('tfLastName').value.trim();
+      const employee_number = document.getElementById('tfEmployeeNumber').value.trim();
+
+      try {
+        closeTeacherForgotModal();
+        await findRoleCredentials({
+          role: 'teacher',
+          first_name,
+          last_name,
+          employee_number,
+        });
+      } catch (err) {
+        alertDiv.innerHTML = '<div class="alert alert-error">Connection error. Is the server running?</div>';
+      }
     });
 
     document.getElementById('parentForgotForm').addEventListener('submit', async (e) => {
