@@ -789,10 +789,14 @@ async function reclassifyStudent(req, res) {
   try {
     const { id } = req.params;
     const action = String(req.body.action || '').trim().toLowerCase();
+    const requestedTargetClassId = req.body.to_class_id ? Number(req.body.to_class_id) : null;
     const academicYear = nextAcademicYear(await getCurrentAcademicYearSetting());
 
     if (!['promote', 'demote', 'keep'].includes(action)) {
       return res.status(400).json({ error: 'action must be one of: promote, demote, keep' });
+    }
+    if (action !== 'keep' && (!requestedTargetClassId || Number.isNaN(requestedTargetClassId))) {
+      return res.status(400).json({ error: 'to_class_id is required for promote or demote' });
     }
 
     const studentRes = await pool.query('SELECT student_id, first_name, last_name FROM students WHERE student_id = $1', [id]);
@@ -874,38 +878,51 @@ async function reclassifyStudent(req, res) {
       return String(a.levelLabel || '').localeCompare(String(b.levelLabel || ''), undefined, { sensitivity: 'base' });
     });
 
-    const currentLevelKey = normalizeLevel(current.level);
-    let currentLevelIndex = levelGroups.findIndex(
-      (g) => g.key === currentLevelKey && g.classes.some((c) => Number(c.class_id) === Number(current.class_id))
-    );
-    if (currentLevelIndex < 0) {
-      currentLevelIndex = levelGroups.findIndex((g) => g.key === currentLevelKey);
-    }
-    if (currentLevelIndex < 0) {
-      return res.status(400).json({ error: 'Current class is not available for reclassification' });
+    const requestedTarget = requestedTargetClassId
+      ? activeClasses.find((c) => Number(c.class_id) === requestedTargetClassId)
+      : null;
+    if (action !== 'keep' && !requestedTarget) {
+      return res.status(400).json({ error: 'Destination class is not available' });
     }
 
-    const direction = action === 'promote' ? 1 : -1;
-    const targetLevelIndex = currentLevelIndex + direction;
-
-    if (targetLevelIndex < 0 || targetLevelIndex >= levelGroups.length) {
-      return res.status(400).json({ error: `Cannot ${action}. Student is already at the ${action === 'promote' ? 'highest' : 'lowest'} available class.` });
+    if (requestedTarget && Number(requestedTarget.class_id) === Number(current.class_id)) {
+      return res.status(400).json({ error: 'Student is already in the selected class' });
     }
 
-    const targetClasses = [...levelGroups[targetLevelIndex].classes].sort((a, b) => {
-      const nameCmp = String(a.class_name || '').localeCompare(String(b.class_name || ''), undefined, { sensitivity: 'base' });
-      if (nameCmp !== 0) return nameCmp;
-      return Number(a.class_id) - Number(b.class_id);
-    });
+    let target = requestedTarget;
+    if (!target) {
+      const currentLevelKey = normalizeLevel(current.level);
+      let currentLevelIndex = levelGroups.findIndex(
+        (g) => g.key === currentLevelKey && g.classes.some((c) => Number(c.class_id) === Number(current.class_id))
+      );
+      if (currentLevelIndex < 0) {
+        currentLevelIndex = levelGroups.findIndex((g) => g.key === currentLevelKey);
+      }
+      if (currentLevelIndex < 0) {
+        return res.status(400).json({ error: 'Current class is not available for reclassification' });
+      }
 
-    const currentStream = (String(current.class_name || '').match(/[A-Za-z]+$/) || [])[0]?.toLowerCase() || '';
-    let target = targetClasses[0];
-    if (currentStream) {
-      const streamMatch = targetClasses.find((c) => {
-        const suffix = (String(c.class_name || '').match(/[A-Za-z]+$/) || [])[0]?.toLowerCase() || '';
-        return suffix === currentStream;
+      const direction = action === 'promote' ? 1 : -1;
+      const targetLevelIndex = currentLevelIndex + direction;
+      if (targetLevelIndex < 0 || targetLevelIndex >= levelGroups.length) {
+        return res.status(400).json({ error: `Cannot ${action}. Student is already at the ${action === 'promote' ? 'highest' : 'lowest'} available class.` });
+      }
+
+      const targetClasses = [...levelGroups[targetLevelIndex].classes].sort((a, b) => {
+        const nameCmp = String(a.class_name || '').localeCompare(String(b.class_name || ''), undefined, { sensitivity: 'base' });
+        if (nameCmp !== 0) return nameCmp;
+        return Number(a.class_id) - Number(b.class_id);
       });
-      if (streamMatch) target = streamMatch;
+
+      const currentStream = (String(current.class_name || '').match(/[A-Za-z]+$/) || [])[0]?.toLowerCase() || '';
+      target = targetClasses[0];
+      if (currentStream) {
+        const streamMatch = targetClasses.find((c) => {
+          const suffix = (String(c.class_name || '').match(/[A-Za-z]+$/) || [])[0]?.toLowerCase() || '';
+          return suffix === currentStream;
+        });
+        if (streamMatch) target = streamMatch;
+      }
     }
 
     if (current.status === 'active') {

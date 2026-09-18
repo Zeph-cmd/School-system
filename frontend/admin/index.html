@@ -15,6 +15,7 @@
       <nav>
         <a href="#" data-section="dashboard" class="active">&#128202; <span>Dashboard</span></a>
         <a href="#" data-section="students">&#127891; <span>Students</span></a>
+        <a href="#" data-section="priority">&#9889; <span>Priority</span></a>
         <a href="#" data-section="teachers">&#128105;&#8205;&#127979; <span>Teachers</span></a>
         <a href="#" data-section="parents">&#128106; <span>Parents</span></a>
         <a href="#" data-section="classes">&#127979; <span>Classes</span></a>
@@ -88,6 +89,39 @@
           <table><thead><tr>
             <th>ID</th><th>Adm No</th><th>Name</th><th>Gender</th><th>DOB</th><th>Guardian</th><th>Tuition</th><th>Status</th><th>Actions</th>
           </tr></thead><tbody id="studentsTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Priority Section -->
+      <div id="sec-priority" class="section">
+        <h1>Priority</h1>
+        <div class="record-card" style="max-width:620px;">
+          <div class="form-group">
+            <label for="priorityStudent">Student</label>
+            <select id="priorityStudent"></select>
+          </div>
+          <div class="form-group">
+            <label for="priorityDecision">Decision</label>
+            <select id="priorityDecision">
+              <option value="">Choose decision...</option>
+              <option value="promote">Promote</option>
+              <option value="demote">Demote</option>
+              <option value="keep">Keep Current Class</option>
+            </select>
+          </div>
+          <div id="priorityClassFields" style="display:none;">
+            <div class="form-group">
+              <label for="priorityFrom">From</label>
+              <input id="priorityFrom" type="text" readonly>
+            </div>
+            <div class="form-group">
+              <label for="priorityTo">To</label>
+              <select id="priorityTo"></select>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-primary" id="prioritySaveBtn">Save Decision</button>
+          </div>
         </div>
       </div>
 
@@ -404,6 +438,7 @@
       const loaders = {
         dashboard: loadDashboard,
         students: loadStudents,
+        priority: loadPriority,
         teachers: loadTeachers,
         parents: loadParents,
         classes: loadClasses,
@@ -786,20 +821,71 @@
 
     function renderStudentsTable(rows) {
       document.getElementById('studentsTable').innerHTML = rows.map(s => {
-        const reclassActions = [
-          `<a onclick="reclassifyStudent(${s.student_id}, 'promote')">Promote Next Class</a>`,
-          `<a onclick="reclassifyStudent(${s.student_id}, 'demote')">Demote Previous Class</a>`,
-          `<a onclick="reclassifyStudent(${s.student_id}, 'keep')">Keep Current Class</a>`
-        ].join('');
         return `<tr>
           <td>${s.student_id}</td><td>${s.admission_number}</td>
           <td>${s.first_name} ${s.last_name}</td><td>${s.gender}</td>
           <td>${s.date_of_birth?.split('T')[0] || ''}</td><td>${escHtml(s.guardian_name) || '-'}</td>
           <td><button class="btn btn-sm" onclick="openStudentTuitionModal(${s.student_id})">View</button></td>
           <td>${statusBadge(s.status)}</td>
-          <td>${editDropdown('students', s.student_id, { extraActions: reclassActions })}</td>
+          <td>${editDropdown('students', s.student_id)}</td>
         </tr>`;
       }).join('');
+    }
+
+    async function loadPriority() {
+      const [students, classes] = await Promise.all([
+        dataCache.studentsList?.length ? dataCache.studentsList : api(`${API}/students`),
+        dataCache.classes ? Object.values(dataCache.classes) : api(`${API}/classes`),
+      ]);
+      if (!students || !classes) return;
+      dataCache.studentsList = students;
+      dataCache.classes = Object.fromEntries(classes.map((c) => [c.class_id, c]));
+      const studentSelect = document.getElementById('priorityStudent');
+      const classSelect = document.getElementById('priorityTo');
+      studentSelect.innerHTML = students
+        .filter((s) => s.current_class_id)
+        .map((s) => `<option value="${s.student_id}">${escHtml(`${s.first_name} ${s.last_name}`)} - ${escHtml(s.current_class_name || '-')}</option>`)
+        .join('');
+      classSelect.innerHTML = classes
+        .map((c) => `<option value="${c.class_id}">${escHtml(c.class_name)} (${escHtml(c.level)})</option>`)
+        .join('');
+      updatePriorityFields();
+    }
+
+    function updatePriorityFields() {
+      const student = dataCache.studentsList?.find((s) => String(s.student_id) === String(document.getElementById('priorityStudent')?.value));
+      const decision = document.getElementById('priorityDecision')?.value || '';
+      const fields = document.getElementById('priorityClassFields');
+      const from = document.getElementById('priorityFrom');
+      if (!student || !fields || !from) return;
+      from.value = student.current_class_name || '-';
+      fields.style.display = decision === 'keep' ? 'none' : decision ? 'block' : 'none';
+    }
+
+    async function savePriorityDecision() {
+      const studentId = document.getElementById('priorityStudent')?.value;
+      const decision = document.getElementById('priorityDecision')?.value;
+      const toClassId = document.getElementById('priorityTo')?.value;
+      const student = dataCache.studentsList?.find((s) => String(s.student_id) === String(studentId));
+      if (!studentId || !decision || !student) {
+        showAlert('Select a student and decision first.', 'error');
+        return;
+      }
+      if (decision !== 'keep' && !toClassId) {
+        showAlert('Select a destination class.', 'error');
+        return;
+      }
+      const decisionText = decision === 'keep' ? `keep ${student.first_name} ${student.last_name} in ${student.current_class_name}` : `${decision} ${student.first_name} ${student.last_name} from ${student.current_class_name}`;
+      const { confirmed } = await openActionDialog({ title: 'Confirm priority decision', message: `Are you sure you want to ${decisionText}?`, okLabel: 'Save' });
+      if (!confirmed) return;
+      const res = await api(`${API}/students/${studentId}/reclassify`, 'POST', { action: decision, to_class_id: decision === 'keep' ? null : Number(toClassId) });
+      if (res && !res.error) {
+        showAlert(res.message || 'Priority decision saved');
+        await loadStudents();
+        await loadPriority();
+      } else {
+        showAlert(res?.error || 'Priority decision failed', 'error');
+      }
     }
 
     function applyStudentFilters() {
@@ -2120,6 +2206,9 @@
     }
 
     // Initial load
+    document.getElementById('priorityStudent')?.addEventListener('change', updatePriorityFields);
+    document.getElementById('priorityDecision')?.addEventListener('change', updatePriorityFields);
+    document.getElementById('prioritySaveBtn')?.addEventListener('click', savePriorityDecision);
     loadDashboard();
     loadNotifBadge();
 
