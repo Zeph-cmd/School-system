@@ -959,8 +959,6 @@
         template_id: null,
         academic_year: defaults.year,
         term: defaults.term,
-        billing_cycle: 'monthly',
-        billing_period: '',
         amount_due: '',
       };
 
@@ -968,8 +966,6 @@
         template_id: draft.template_id,
         academic_year: document.getElementById('tuitionAcademicYear')?.value?.trim() || defaults.year,
         term: document.getElementById('tuitionTerm')?.value || defaults.term,
-        billing_cycle: document.getElementById('tuitionBillingCycle')?.value || 'monthly',
-        billing_period: document.getElementById('tuitionBillingPeriod')?.value?.trim() || '',
         amount_due: document.getElementById('tuitionAmountDue')?.value?.trim() || '',
       });
 
@@ -977,7 +973,7 @@
       document.getElementById('modalTitle').textContent = `Set Tuition - ${className}`;
       document.getElementById('modalOverlay').querySelector('.modal')?.classList.add('tuition-modal');
       form.innerHTML = `
-        <div class="alert" style="margin-bottom:0.8rem;">Set tuition for this class and term. Use <strong>Update Tuition</strong> for existing forms and <strong>Save Tuition</strong> for new forms.</div>
+        <div class="alert" style="margin-bottom:0.8rem;">Set tuition for every student enrolled in this class and academic year.</div>
         <div class="form-row">
           <div class="form-group">
             <label>Academic Year</label>
@@ -990,31 +986,15 @@
             </select>
           </div>
         </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Billing Cycle</label>
-            <select id="tuitionBillingCycle" required>
-              <option value="monthly">Monthly</option>
-              <option value="term">Term</option>
-              <option value="semester">Semester</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Amount Due</label>
-            <input type="number" id="tuitionAmountDue" step="any" min="0" placeholder="0.00" required>
-          </div>
-        </div>
         <div class="form-group">
-          <label>Billing Period Label</label>
-          <input type="text" id="tuitionBillingPeriod" placeholder="e.g. May 2026, Term 1, Semester 1" required>
+          <label>Amount Due</label>
+          <input type="number" id="tuitionAmountDue" step="any" min="0" placeholder="0.00" required>
         </div>
         <div class="record-card" style="margin-top:0.75rem;">
           <div style="font-weight:700; margin-bottom:0.5rem;">Existing Tuition Forms</div>
-          <div class="table-container"><table><thead><tr><th>Year</th><th>Term</th><th>Cycle</th><th>Period</th><th>Amount Due</th><th>Action</th></tr></thead><tbody id="tuitionTemplateRows"><tr><td colspan="6">Loading...</td></tr></tbody></table></div>
+          <div class="table-container"><table><thead><tr><th>Year</th><th>Term</th><th>Amount Due</th><th>Action</th></tr></thead><tbody id="tuitionTemplateRows"><tr><td colspan="4">Loading...</td></tr></tbody></table></div>
         </div>
         <div class="modal-actions">
-          <button type="button" class="btn" id="newTuitionFormBtn">New Set Tuition Fee Form</button>
-          <button type="button" class="btn btn-success" id="updateTuitionBtn">Update Tuition</button>
           <button type="button" class="btn btn-primary" id="saveTuitionBtn">Save Tuition</button>
           <button type="button" class="btn" onclick="closeModal()">Cancel</button>
         </div>
@@ -1024,8 +1004,6 @@
         draft.template_id = null;
         document.getElementById('tuitionAcademicYear').value = draft.academic_year || defaults.year;
         document.getElementById('tuitionTerm').value = draft.term || defaults.term;
-        document.getElementById('tuitionBillingCycle').value = 'monthly';
-        document.getElementById('tuitionBillingPeriod').value = '';
         document.getElementById('tuitionAmountDue').value = '';
       };
 
@@ -1033,8 +1011,6 @@
         draft.template_id = Number(row.template_id);
         document.getElementById('tuitionAcademicYear').value = row.academic_year || defaults.year;
         document.getElementById('tuitionTerm').value = row.term || defaults.term;
-        document.getElementById('tuitionBillingCycle').value = row.billing_cycle || 'monthly';
-        document.getElementById('tuitionBillingPeriod').value = row.billing_period || '';
         document.getElementById('tuitionAmountDue').value = Number(row.amount_due || 0);
       };
 
@@ -1043,29 +1019,19 @@
         const tbody = document.getElementById('tuitionTemplateRows');
         if (!tbody) return;
         if (!list || !Array.isArray(list) || list.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6">No tuition forms yet.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="4">No tuition forms yet.</td></tr>';
           return;
         }
         tbody.innerHTML = list.map(r => `<tr>
           <td>${escHtml(r.academic_year)}</td>
           <td>${escHtml(r.term)}</td>
-          <td>${escHtml(r.billing_cycle)}</td>
-          <td>${escHtml(r.billing_period)}</td>
           <td>$${parseFloat(r.amount_due || 0).toFixed(2)}</td>
           <td class="tuition-action-cell">
             <div class="tuition-action-stack">
-              <button type="button" class="btn btn-sm tuition-edit-btn" data-template-id="${r.template_id}">Update</button>
-              <button type="button" class="btn btn-sm btn-danger tuition-remove-btn" data-template-id="${r.template_id}">Remove</button>
+              <button type="button" class="btn btn-sm btn-danger tuition-remove-btn" data-template-id="${r.template_id}">Delete</button>
             </div>
           </td>
         </tr>`).join('');
-
-        tbody.querySelectorAll('.tuition-edit-btn').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            const selected = list.find((x) => Number(x.template_id) === Number(btn.dataset.templateId));
-            if (selected) fillDraftForm(selected);
-          });
-        });
 
         tbody.querySelectorAll('.tuition-remove-btn').forEach((btn) => {
           btn.addEventListener('click', async () => {
@@ -1073,7 +1039,7 @@
             if (!selected) return;
             const { confirmed } = await openActionDialog({
               title: 'Remove tuition form',
-              message: `Remove tuition form ${selected.billing_period} (${selected.term}, ${selected.academic_year})?`,
+              message: `Remove tuition form for ${selected.term}, ${selected.academic_year}?`,
               okLabel: 'Remove',
             });
             if (!confirmed) return;
@@ -1092,15 +1058,9 @@
         });
       };
 
-      const submitTuition = async ({ isUpdate }) => {
+      const submitTuition = async () => {
         const payload = getPayload();
-        if (isUpdate && !payload.template_id) {
-          showAlert('Select an existing tuition form first, then click Update Tuition.', 'error');
-          return;
-        }
-        if (!isUpdate) {
-          payload.template_id = null;
-        }
+        payload.template_id = null;
 
         let res = await api(`${API}/classes/${classId}/tuition`, 'POST', payload);
         if (res?.needs_confirmation) {
@@ -1121,8 +1081,6 @@
           // Keep current values visible for admin verification.
           document.getElementById('tuitionAcademicYear').value = payload.academic_year;
           document.getElementById('tuitionTerm').value = payload.term;
-          document.getElementById('tuitionBillingCycle').value = payload.billing_cycle;
-          document.getElementById('tuitionBillingPeriod').value = payload.billing_period;
           document.getElementById('tuitionAmountDue').value = payload.amount_due;
           draft.template_id = res.template?.template_id || payload.template_id || null;
         } else {
@@ -1130,9 +1088,7 @@
         }
       };
 
-      document.getElementById('newTuitionFormBtn').addEventListener('click', () => resetDraftForm());
-      document.getElementById('saveTuitionBtn').addEventListener('click', () => submitTuition({ isUpdate: false }));
-      document.getElementById('updateTuitionBtn').addEventListener('click', () => submitTuition({ isUpdate: true }));
+      document.getElementById('saveTuitionBtn').addEventListener('click', submitTuition);
 
       form.onsubmit = (e) => e.preventDefault();
 

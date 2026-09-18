@@ -1229,20 +1229,14 @@ async function setClassTuition(req, res) {
   try {
     await ensureClassTuitionStructures();
     const { id } = req.params;
-    const billingCycle = normalizeBillingCycle(req.body.billing_cycle);
-    const billingPeriod = String(req.body.billing_period || '').trim();
     const amountDue = toMoney(req.body.amount_due);
     const academicYear = String(req.body.academic_year || '').trim() || await getCurrentAcademicYearSetting();
     const normalizedTerm = normalizeTerm(req.body.term) || await getCurrentTermSetting();
+    const billingCycle = 'term';
+    const billingPeriod = normalizedTerm;
     const templateId = req.body.template_id ? Number(req.body.template_id) : null;
     const confirmReplace = [true, 'true', '1', 1].includes(req.body.confirm_replace);
 
-    if (!billingCycle) {
-      return res.status(400).json({ error: 'billing_cycle must be one of: monthly, term, semester' });
-    }
-    if (!billingPeriod) {
-      return res.status(400).json({ error: 'billing_period is required' });
-    }
     if (!parseAcademicYearRange(academicYear)) {
       return res.status(400).json({ error: 'academic_year must be in format YYYY/YYYY' });
     }
@@ -1321,7 +1315,7 @@ async function setClassTuition(req, res) {
     const enrollments = await pool.query(
       `SELECT enrollment_id
        FROM enrollments
-       WHERE class_id = $1 AND academic_year = $2 AND status = 'active'`,
+        WHERE class_id = $1 AND academic_year = $2`,
       [id, academicYear]
     );
 
