@@ -850,7 +850,7 @@
         <td>${p.first_name} ${p.last_name}</td><td>${p.phone}</td>
         <td>${p.email || '-'}</td><td>${p.relationship || '-'}</td>
         <td>${escHtml(p.children_names) || '-'}</td>
-        <td>${editDropdown('parents', p.parent_id)}</td>
+        <td>${editDropdown('parents', p.parent_id, { showUpdate: Boolean(String(p.email || '').trim()) })}</td>
       </tr>`).join('');
     }
 
@@ -1397,15 +1397,19 @@
     // ── Edit Dropdown ───────────────────────────────
     function editDropdown(resource, id, options = {}) {
       const showDelete = options.showDelete !== false;
+      const showUpdate = options.showUpdate !== false;
       const extraActions = options.extraActions || '';
       const deleteAction = showDelete
         ? `<a class="text-danger" onclick="deleteItem('${resource}',${id})">Delete</a>`
         : '';
       if (options.onlyDelete) return deleteAction;
+      const updateAction = showUpdate
+        ? `<a onclick="openUpdateModal('${resource}',${id})">Update</a>`
+        : '';
       return `<div class="action-dropdown">
         <button class="btn btn-primary btn-sm" onclick="toggleDropdown(this)">Edit &#9662;</button>
         <div class="dropdown-menu">
-          <a onclick="openUpdateModal('${resource}',${id})">Update</a>
+          ${updateAction}
           ${extraActions}
           ${deleteAction}
         </div>
