@@ -348,9 +348,14 @@
       return `${y}/${y + 1}`;
     }
 
-    function buildAcademicYearSelects(children) {
+    async function buildAcademicYearSelects(children) {
       const years = new Set();
-      const current = defaultAcademicYear();
+      let current = defaultAcademicYear();
+      try {
+        const settings = await fetch('/api/auth/academic-year', { headers }).then((res) => res.json());
+        if (settings?.current_academic_year) current = settings.current_academic_year;
+      } catch (err) {
+      }
       const start = Number(current.split('/')[0]);
       for (let y = start - 3; y <= start + 1; y += 1) {
         years.add(`${y}/${y + 1}`);
@@ -543,7 +548,7 @@
       ['gradeChildSelect', 'feeChildSelect', 'hwChildSelect'].forEach(id => {
         document.getElementById(id).innerHTML = '<option value="">Choose...</option>' + opts;
       });
-      buildAcademicYearSelects(myChildren);
+      await buildAcademicYearSelects(myChildren);
     }
 
     function applyParentMessagingUi() {

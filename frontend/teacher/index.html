@@ -288,10 +288,15 @@
       return `${y}/${y + 1}`;
     }
 
-    function buildAcademicYearOptions() {
+    async function buildAcademicYearOptions() {
       const select = document.getElementById('teacherYearSelect');
       if (!select) return;
-      const current = defaultAcademicYear();
+      let current = defaultAcademicYear();
+      try {
+        const settings = await fetch('/api/auth/academic-year', { headers }).then((res) => res.json());
+        if (settings?.current_academic_year) current = settings.current_academic_year;
+      } catch (err) {
+      }
       const startYear = Number(current.split('/')[0]);
       const years = [];
       for (let y = startYear - 3; y <= startYear + 2; y += 1) {
@@ -726,8 +731,7 @@
     }
 
     // Initial load
-    buildAcademicYearOptions();
-    loadAssignments();
+    buildAcademicYearOptions().then(() => loadAssignments());
     loadTeacherUnreadCount();
     // Auto-refresh notification badge every 30s for real-time updates
     setInterval(loadTeacherUnreadCount, 30000);

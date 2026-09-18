@@ -632,10 +632,28 @@ async function me(req, res) {
   }
 }
 
+// GET /api/auth/academic-year
+async function getAcademicYear(req, res) {
+  try {
+    await ensureSystemSettingsTable();
+    const result = await pool.query(
+      `SELECT setting_value AS current_academic_year
+       FROM system_settings
+       WHERE setting_key = 'current_academic_year'
+       LIMIT 1`
+    );
+    res.json({ current_academic_year: result.rows[0]?.current_academic_year || `${new Date().getFullYear()}/${new Date().getFullYear() + 1}` });
+  } catch (err) {
+    console.error('Academic year error:', err);
+    res.status(500).json({ error: 'Failed to fetch academic year' });
+  }
+}
+
 module.exports = {
   register,
   login,
   me,
+  getAcademicYear,
   adminForgotPassword,
   forgotCredentials,
   parentForgotPassword,
