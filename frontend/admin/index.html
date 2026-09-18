@@ -1208,7 +1208,7 @@
       };
 
       const openEditStudentTuitionModal = async (studentId, studentName, year, term) => {
-        const studentData = await api(`${API}/students/${studentId}`);
+        const studentData = dataCache.students?.[studentId];
         if (!studentData) {
           showAlert('Failed to load student data', 'error');
           return;
@@ -1233,6 +1233,8 @@
             const res = await api(`${API}/students/${studentId}/tuition`, 'PUT', payload);
             if (res && !res.error) {
               showAlert(`Student tuition updated successfully`);
+              dataCache.students[studentId] = res;
+              await loadStudents();
               const activeYear = document.getElementById('tuitionViewYear')?.value?.trim() || year || '';
               const activeTerm = document.getElementById('tuitionViewTerm')?.value || term || '';
               await refreshBreakdown(activeYear, activeTerm);
