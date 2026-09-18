@@ -608,22 +608,14 @@
 
       const tuitionDue = tuitionRows.reduce((sum, f) => sum + parseFloat(f.amount_due || 0), 0);
       const tuitionPaid = tuitionRows.reduce((sum, f) => sum + parseFloat(f.amount_paid || 0), 0);
-      const tuitionOutstanding = tuitionDue - tuitionPaid;
+      const tuitionOutstanding = Math.max(0, tuitionDue - tuitionPaid);
 
       const generalDue = generalRows.reduce((sum, f) => sum + parseFloat(f.amount_due || 0), 0);
-      const generalPaid = generalRows.reduce((sum, f) => sum + parseFloat(f.amount_paid || 0), 0);
-      const generalOutstanding = generalDue - generalPaid;
-
-      const totalDue = tuitionDue + generalDue;
-      const totalPaid = tuitionPaid + generalPaid;
-      const outstanding = totalDue - totalPaid;
 
       document.getElementById('feeSummary').innerHTML = `
-        <div class="stat-card ${tuitionOutstanding > 0 ? 'red' : 'green'}"><div class="label">Tuition Outstanding</div><div class="value">$${tuitionOutstanding.toLocaleString()}</div></div>
-        <div class="stat-card ${generalOutstanding > 0 ? 'red' : 'green'}"><div class="label">General Fees Outstanding</div><div class="value">$${generalOutstanding.toLocaleString()}</div></div>
-        <div class="stat-card"><div class="label">Total Due</div><div class="value">$${totalDue.toLocaleString()}</div></div>
-        <div class="stat-card green"><div class="label">Total Paid</div><div class="value">$${totalPaid.toLocaleString()}</div></div>
-        <div class="stat-card ${outstanding > 0 ? 'red' : 'green'}"><div class="label">Outstanding</div><div class="value">$${outstanding.toLocaleString()}</div></div>
+        <div class="stat-card ${tuitionOutstanding > 0 ? 'red' : 'green'}"><div class="label">Outstanding Tuition Fees</div><div class="value">$${tuitionOutstanding.toLocaleString()}</div></div>
+        <div class="stat-card"><div class="label">Other Fees</div><div class="value">$${generalDue.toLocaleString()}</div></div>
+        <div class="stat-card green"><div class="label">Tuition Paid</div><div class="value">$${tuitionPaid.toLocaleString()}</div></div>
       `;
 
       document.getElementById('feesTable').innerHTML = data.map(f => `<tr>
