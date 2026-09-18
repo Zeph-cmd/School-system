@@ -1347,7 +1347,7 @@
       document.getElementById('subjectsTable').innerHTML = data.map(s => `<tr>
         <td>${s.subject_id}</td><td>${s.subject_code}</td><td>${s.subject_name}</td>
         <td>${s.is_active ? '&#9989;' : '&#10060;'}</td>
-        <td>${editDropdown('subjects', s.subject_id)}</td>
+        <td>${editDropdown('subjects', s.subject_id, { onlyDelete: true })}</td>
       </tr>`).join('');
     }
 
@@ -1445,6 +1445,7 @@
       const deleteAction = showDelete
         ? `<a class="text-danger" onclick="deleteItem('${resource}',${id})">Delete</a>`
         : '';
+      if (options.onlyDelete) return deleteAction;
       return `<div class="action-dropdown">
         <button class="btn btn-primary btn-sm" onclick="toggleDropdown(this)">Edit &#9662;</button>
         <div class="dropdown-menu">
@@ -1543,8 +1544,7 @@
         urlFn: (id) => `${API}/classes/${id}`,
         fields: [
           { name: 'class_name', label: 'Class Name', required: true },
-          { name: 'class_code', label: 'Class Code', required: true },
-          { name: 'level', label: 'Level', required: true },
+          { name: 'level', label: 'Level', type: 'text', required: true, placeholder: 'e.g. Primary, JSS, Form 1' },
           { name: 'capacity', label: 'Capacity', type: 'number' },
         ],
         onSuccess: () => { loadClasses(); },
