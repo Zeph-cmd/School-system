@@ -312,7 +312,7 @@
         </div>
         <div class="table-container">
           <table><thead><tr>
-            <th>ID</th><th>User</th><th>Admin Tag</th><th>Action</th><th>Table</th><th>Record</th><th>Time</th><th>Details</th>
+            <th>User</th><th>Admin Tag</th><th>Action</th><th>Table</th><th>Time</th><th>Details</th>
           </tr></thead><tbody id="auditLogsTable"></tbody></table>
         </div>
       </div>
@@ -2105,13 +2105,13 @@
         const time = l.created_at ? new Date(l.created_at).toLocaleString() : '';
         const tag = getAdminTag(l);
         return `<tr>
-          <td>${l.audit_id || '-'}</td><td>${escHtml(l.username || 'System')}</td><td>${adminTagBadge(tag)}</td><td>${l.action}</td>
-          <td>${l.table_name}</td><td>${l.record_id || '-'}</td><td>${time}</td>
+          <td>${escHtml(l.username || 'System')}</td><td>${adminTagBadge(tag)}</td><td>${l.action}</td>
+          <td>${l.table_name}</td><td>${time}</td>
           <td style="font-size:0.8rem; max-width:220px;">
             <button class="btn btn-sm" onclick="openAuditLogDetails(${idx})">View Details</button>
           </td>
         </tr>`;
-      }).join('') || '<tr><td colspan="8">No logs found.</td></tr>';
+      }).join('') || '<tr><td colspan="6">No logs found.</td></tr>';
     }
 
     // ── Notification Badge ──────────────────────────
