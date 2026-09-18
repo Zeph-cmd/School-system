@@ -159,6 +159,17 @@
           <select id="feeClassFilter" onchange="applyFeeFilters()" style="padding:0.5rem; border-radius:6px; border:1px solid var(--border)">
             <option value="">All Classes</option>
           </select>
+          <select id="feeTypeFilter" onchange="applyFeeFilters()" style="padding:0.5rem; border-radius:6px; border:1px solid var(--border)">
+            <option value="">All Fee Types</option>
+            <option value="tuition">Tuition</option>
+            <option value="general">Other Fees</option>
+          </select>
+          <select id="feeTermFilter" onchange="applyFeeFilters()" style="padding:0.5rem; border-radius:6px; border:1px solid var(--border)">
+            <option value="">All Terms</option>
+            <option value="Term 1">Term 1</option>
+            <option value="Term 2">Term 2</option>
+            <option value="Term 3">Term 3</option>
+          </select>
         </div>
         <div class="table-container">
           <table><thead><tr>
@@ -1358,7 +1369,15 @@
 
     function applyFeeFilters() {
       const cls = document.getElementById('feeClassFilter')?.value || '';
-      const rows = (dataCache.feesList || []).filter(f => !cls || String(f.class_name || '') === String(cls));
+      const feeType = document.getElementById('feeTypeFilter')?.value || '';
+      const term = document.getElementById('feeTermFilter')?.value || '';
+      const rows = (dataCache.feesList || []).filter((f) => {
+        const rowType = String(f.fee_type || 'general').toLowerCase();
+        const rowTerm = String(f.term || '').trim();
+        return (!cls || String(f.class_name || '') === String(cls))
+          && (!feeType || rowType === feeType)
+          && (!term || rowTerm === term);
+      });
       document.getElementById('feesTable').innerHTML = rows.map(f => `<tr>
         <td>${f.fee_id}</td><td>${f.class_name || '-'}</td><td>${f.student_name}</td><td>${escHtml(f.fee_type || 'general')}</td><td>${escHtml(f.term || '-')}</td><td>${f.description || '-'}</td>
         <td>$${parseFloat(f.amount_due).toFixed(2)}</td><td>$${parseFloat(f.amount_paid).toFixed(2)}</td>
