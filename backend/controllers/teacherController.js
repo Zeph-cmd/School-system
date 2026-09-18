@@ -95,7 +95,7 @@ async function ensureDeletedHomeworkTable() {
   `);
 }
 
-async function getAllowedParentUsers(userId) {
+async function getAllowedParentUsers(userId, classId = null) {
   const result = await pool.query(
     `WITH teacher_classes AS (
        SELECT DISTINCT ta.class_id
@@ -108,6 +108,7 @@ async function getAllowedParentUsers(userId) {
          OR LOWER(COALESCE(t.first_name, '')) = LOWER(u.username)
        )
        WHERE u.user_id = $1
+         AND ($2::int IS NULL OR ta.class_id = $2)
      )
      SELECT
        pu.user_id,
@@ -128,7 +129,7 @@ async function getAllowedParentUsers(userId) {
      WHERE pr.role_name = 'parent'
      GROUP BY pu.user_id, pu.username, pu.email, pu.phone, p.first_name, p.last_name
      ORDER BY parent_name, pu.username`,
-    [userId]
+    [userId, classId]
   );
   return result.rows;
 }
@@ -734,7 +735,11 @@ async function getMessageParents(req, res) {
     const state = await getTeacherMessagingState(req.user.user_id);
     if (!state.can_message) return res.json([]);
 
-    const parents = await getAllowedParentUsers(req.user.user_id);
+    const classId = req.query.class_id ? parseInt(req.query.class_id, 10) : null;
+    if (req.query.class_id && (!classId || Number.isNaN(classId))) {
+      return res.status(400).json({ error: 'Valid class_id is required' });
+    }
+    const parents = await getAllowedParentUsers(req.user.user_id, classId);
     res.json(parents);
   } catch (err) {
     res.status(500).json({ error: 'Failed to load parent contacts' });
@@ -796,13 +801,14 @@ async function sendParentMessage(req, res) {
 
     await ensureMessagesTable();
     const recipientId = parseInt(req.body.recipient_id, 10);
+    const classId = parseInt(req.body.class_id, 10);
     const subject = String(req.body.subject || '').trim();
     const body = String(req.body.body || req.body.message || '').trim();
-    if (!recipientId || !body) {
-      return res.status(400).json({ error: 'recipient_id and body are required' });
+    if (!recipientId || !classId || !body) {
+      return res.status(400).json({ error: 'class_id, recipient_id, and body are required' });
     }
 
-    const allowedParents = await getAllowedParentUsers(req.user.user_id);
+    const allowedParents = await getAllowedParentUsers(req.user.user_id, classId);
     const allowedSet = new Set(allowedParents.map((p) => p.user_id));
     if (!allowedSet.has(recipientId)) {
       return res.status(403).json({ error: 'You can only message parents of students in your assigned class(es).' });

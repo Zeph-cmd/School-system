@@ -154,8 +154,14 @@
         <div class="record-card" style="margin-bottom:1rem;">
           <h3>Send Message to Parent</h3>
           <div class="form-group">
+            <label>Class</label>
+            <select id="msgClassSelect">
+              <option value="">Choose class...</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label>Parent</label>
-            <select id="msgParentSelect">
+            <select id="msgParentSelect" disabled>
               <option value="">Choose parent...</option>
             </select>
           </div>
@@ -372,6 +378,7 @@
 
       document.getElementById('studentClassSelect').innerHTML = '<option value="">Choose a class...</option>' + classOpts;
       document.getElementById('gradeClassSelect').innerHTML = '<option value="">Choose a class...</option>' + classOpts;
+      document.getElementById('msgClassSelect').innerHTML = '<option value="">Choose a class...</option>' + classOpts;
 
       // Populate subject dropdown (unique subjects)
       const subMap = new Map();
@@ -607,17 +614,23 @@
     }
 
     // ── Messages ─────────────────────────────────
-    async function loadMessageParents() {
-      const data = await api(`${API}/messages/parents`);
-      if (!data) return;
+    async function loadMessageParents(classId = '') {
       const sel = document.getElementById('msgParentSelect');
+      if (!classId) {
+        sel.innerHTML = '<option value="">Choose a class first...</option>';
+        sel.disabled = true;
+        return;
+      }
+      const data = await api(`${API}/messages/parents?class_id=${encodeURIComponent(classId)}`);
+      if (!data) return;
       sel.innerHTML = '<option value="">Choose parent...</option>' + data.map(p =>
         `<option value="${p.user_id}">${p.parent_name || p.username} (${p.username}) - ${p.children || 'No child info'}</option>`
       ).join('');
+      sel.disabled = false;
     }
 
     async function loadTeacherMessages() {
-      await loadMessageParents();
+      await loadMessageParents(document.getElementById('msgClassSelect')?.value || '');
       const data = await api(`${API}/messages`);
       if (!data) return;
       document.getElementById('teacherConversation').style.display = 'none';
@@ -657,14 +670,15 @@
     }
 
     async function sendParentMessage() {
+      const class_id = document.getElementById('msgClassSelect').value;
       const recipient_id = document.getElementById('msgParentSelect').value;
       const subject = document.getElementById('msgSubject').value.trim();
       const body = document.getElementById('msgBody').value.trim();
-      if (!recipient_id || !body) {
-        showAlert('Parent and message body are required.', 'error');
+      if (!class_id || !recipient_id || !body) {
+        showAlert('Class, parent, and message body are required.', 'error');
         return;
       }
-      const res = await api(`${API}/messages/private`, 'POST', { recipient_id, subject, body });
+      const res = await api(`${API}/messages/private`, 'POST', { class_id, recipient_id, subject, body });
       if (res && !res.error) {
         showAlert('Message sent');
         document.getElementById('msgSubject').value = '';
@@ -674,6 +688,10 @@
         showAlert(res?.error || 'Failed to send message', 'error');
       }
     }
+
+    document.getElementById('msgClassSelect')?.addEventListener('change', (event) => {
+      loadMessageParents(event.target.value);
+    });
 
     async function openTeacherConversation(id) {
       const data = await api(`${API}/messages/${id}/conversation`);
