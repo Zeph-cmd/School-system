@@ -1023,8 +1023,14 @@
         return;
       }
 
-      const yearOptions = [...new Set(rows.map(r => String(r.academic_year || '').trim()).filter(Boolean))].sort().reverse();
-      const selectedYear = yearOptions[0] || '';
+      const settings = await api(`${API}/academic-year-settings`);
+      const configuredYear = String(settings?.current_academic_year || '').trim();
+      const enrollmentYears = [...new Set(rows.map(r => String(r.academic_year || '').trim()).filter(Boolean))].sort().reverse();
+      const yearOptions = [...new Set([
+        configuredYear,
+        ...enrollmentYears,
+      ].filter(Boolean))].sort().reverse();
+      const selectedYear = enrollmentYears.includes(configuredYear) ? configuredYear : (enrollmentYears[0] || configuredYear || '');
       const renderRows = (year) => rows
         .filter(r => !year || String(r.academic_year || '').trim() === year)
         .map(r => `<tr><td>${escHtml(r.student_name || '-')}</td><td>${escHtml(r.academic_year || '-')}</td><td>${statusBadge(r.status || '-')}</td></tr>`)
@@ -1054,10 +1060,17 @@
       const className = classInfo?.class_name || `Class ${classId}`;
       const settings = await api(`${API}/academic-year-settings`);
       const termSettings = await api(`${API}/current-term-settings`);
+      const classEnrollments = await api(`${API}/enrollments?class_id=${encodeURIComponent(classId)}`) || [];
       const defaults = {
         year: settings?.current_academic_year || '',
         term: termSettings?.current_term || 'Term 1',
       };
+      const tuitionYears = [...new Set([
+        String(defaults.year || '').trim(),
+        ...classEnrollments.map((e) => String(e.academic_year || '').trim()),
+      ].filter(Boolean))].sort().reverse();
+      const enrollmentYears = [...new Set(classEnrollments.map((e) => String(e.academic_year || '').trim()).filter(Boolean))].sort().reverse();
+      const selectedTuitionYear = enrollmentYears.includes(defaults.year) ? defaults.year : (enrollmentYears[0] || defaults.year);
 
       const draft = {
         template_id: null,
@@ -1081,7 +1094,9 @@
         <div class="form-row">
           <div class="form-group">
             <label>Academic Year</label>
-            <input type="text" id="tuitionAcademicYear" value="${escHtml(defaults.year)}" placeholder="YYYY/YYYY" required>
+            <select id="tuitionAcademicYear" required>
+              ${tuitionYears.map((year) => `<option value="${escHtml(year)}" ${year === selectedTuitionYear ? 'selected' : ''}>${escHtml(year)}</option>`).join('')}
+            </select>
           </div>
           <div class="form-group">
             <label>Term</label>
@@ -1179,7 +1194,8 @@
         }
 
         if (res && !res.error) {
-          showAlert(res.message || 'Tuition form saved successfully');
+          const affected = Number(res.affected_enrollments || 0);
+          showAlert(affected > 0 ? `${res.message || 'Tuition form saved successfully'} ${affected} student(s) updated.` : 'Tuition form saved, but no students matched the selected academic year.', affected > 0 ? 'success' : 'error');
           await loadTemplateRows();
           loadStudents();
           // Keep current values visible for admin verification.
