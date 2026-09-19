@@ -132,6 +132,48 @@ async function register(req, res) {
       if (!cleanParentRelationship) {
         return res.status(400).json({ error: 'Parent relationship is required.' });
       }
+
+      const studentMatch = await pool.query(
+        `SELECT s.student_id
+         FROM students s
+         WHERE regexp_replace(UPPER(TRIM(s.admission_number)), '[^A-Z0-9]', '', 'g') = regexp_replace(UPPER(TRIM($1)), '[^A-Z0-9]', '', 'g')
+           AND LOWER(TRIM(s.first_name)) = LOWER(TRIM($2))
+           AND LOWER(TRIM(s.last_name)) = LOWER(TRIM($3))
+         LIMIT 1`,
+        [cleanAdmissionNumber, cleanStudentFirst, cleanStudentLast]
+      );
+      if (studentMatch.rows.length === 0) {
+        return res.status(400).json({ error: 'No matching student exists for that admission number and name.' });
+      }
+
+      const approvedLink = await pool.query(
+        `SELECT 1
+         FROM parent_student ps
+         JOIN parents p ON p.parent_id = ps.parent_id
+         JOIN users u ON LOWER(COALESCE(u.email, '')) = LOWER(COALESCE(p.email, ''))
+         JOIN user_roles ur ON ur.user_id = u.user_id
+         JOIN roles r ON r.role_id = ur.role_id
+         WHERE ps.student_id = $1
+           AND r.role_name = 'parent'
+           AND u.status = 'approved'
+         LIMIT 1`,
+        [studentMatch.rows[0].student_id]
+      );
+      if (approvedLink.rows.length > 0) {
+        return res.status(409).json({ error: 'This student admission is already linked to an approved parent account.' });
+      }
+
+      const pendingLink = await pool.query(
+        `SELECT 1
+         FROM registration_requests
+         WHERE role = 'parent' AND status = 'pending'
+           AND regexp_replace(UPPER(TRIM(student_admission_number)), '[^A-Z0-9]', '', 'g') = regexp_replace(UPPER(TRIM($1)), '[^A-Z0-9]', '', 'g')
+         LIMIT 1`,
+        [cleanAdmissionNumber]
+      );
+      if (pendingLink.rows.length > 0) {
+        return res.status(409).json({ error: 'A parent request already exists for this student admission.' });
+      }
     }
 
     const effectivePassword = String(password || '').trim() || generateTemporaryPassword(role === 'teacher' ? 'Teacher@' : 'Parent@');
