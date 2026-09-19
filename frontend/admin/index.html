@@ -2538,7 +2538,7 @@
     async function sendReply(msgId) {
       const body = document.getElementById('replyBody').value.trim();
       if (!body) return;
-      const res = await api(`${API}/fees/${msgId}/reply`, 'POST', { body });
+      const res = await api(`${API}/messages/${msgId}/reply`, 'POST', { body });
       if (res && !res.error) {
         openConversation(msgId);
       } else {

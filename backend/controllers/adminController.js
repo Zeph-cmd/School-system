@@ -2375,6 +2375,30 @@ async function approveRegistration(req, res) {
       }
 
       if (!parentId) {
+        const nameMatch = await pool.query(
+          `SELECT parent_id
+           FROM parents
+           WHERE LOWER(TRIM(first_name)) = LOWER(TRIM($1))
+             AND LOWER(TRIM(last_name)) = LOWER(TRIM($2))
+             AND email IS NULL
+           ORDER BY parent_id
+           LIMIT 1`,
+          [regReq.first_name || account.username, regReq.last_name || '']
+        );
+        if (nameMatch.rows.length > 0) {
+          parentId = nameMatch.rows[0].parent_id;
+          await pool.query(
+            `UPDATE parents
+             SET phone = COALESCE(NULLIF($1, ''), phone),
+                 email = $2,
+                 relationship = COALESCE(NULLIF($3, ''), relationship)
+             WHERE parent_id = $4`,
+            [regReq.phone || account.phone || '', profileEmail || null, regReq.parent_relationship || '', parentId]
+          );
+        }
+      }
+
+      if (!parentId) {
         const parentRes = await pool.query(
           `INSERT INTO parents (first_name, last_name, phone, email, relationship)
            VALUES ($1, $2, $3, $4, $5) RETURNING parent_id`,
