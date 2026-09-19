@@ -56,17 +56,17 @@ async function run() {
   // ── Authentication ────────────────────────────
   console.log('\n2. Authentication');
   await test('Login fails with wrong password', async () => {
-    const { status } = await api('/api/auth/login', 'POST', { username: 'admin', password: 'wrong' });
+    const { status } = await api('/api/auth/login', 'POST', { username: 'admin', role: 'admin', password: 'wrong' });
     assert(status === 401, `Expected 401, got ${status}`);
   });
 
   await test('Login fails with missing fields', async () => {
-    const { status } = await api('/api/auth/login', 'POST', { username: 'admin' });
+    const { status } = await api('/api/auth/login', 'POST', { username: 'admin', role: 'admin' });
     assert(status === 400, `Expected 400, got ${status}`);
   });
 
   await test('Admin login succeeds', async () => {
-    const { status, data } = await api('/api/auth/login', 'POST', { username: 'admin', password: 'Admin@2026!' });
+    const { status, data } = await api('/api/auth/login', 'POST', { username: 'admin', role: 'admin', password: 'Admin@2026!' });
     assert(status === 200, `Expected 200, got ${status}`);
     assert(data.token, 'Should return token');
     assert(data.user.roles.includes('admin'), 'Should have admin role');
@@ -74,14 +74,14 @@ async function run() {
   });
 
   await test('Teacher login succeeds', async () => {
-    const { status, data } = await api('/api/auth/login', 'POST', { username: 'teacher1', email: 'teacher1@school.com' });
+    const { status, data } = await api('/api/auth/login', 'POST', { username: 'teacher1', role: 'teacher', email: 'teacher1@school.com' });
     assert(status === 200, `Expected 200, got ${status}`);
     assert(data.user.roles.includes('teacher'), 'Should have teacher role');
     teacherToken = data.token;
   });
 
   await test('Parent login succeeds', async () => {
-    const { status, data } = await api('/api/auth/login', 'POST', { username: 'parent1', email: 'parent1@school.com' });
+    const { status, data } = await api('/api/auth/login', 'POST', { username: 'parent1', role: 'parent', email: 'parent1@school.com' });
     assert(status === 200, `Expected 200, got ${status}`);
     assert(data.user.roles.includes('parent'), 'Should have parent role');
     parentToken = data.token;

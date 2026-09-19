@@ -78,7 +78,7 @@ async function api(path, token, method = 'GET', body) {
         else createPayload.enrollment_id = student.enrollment_id || studentId;
 
         const createRes = await api('/api/admin/fees', admin.token, 'POST', createPayload);
-        check('Create test fee for edit verification', createRes.status === 200 && !createRes.data?.error, JSON.stringify(createRes.data));
+        check('Create test fee for edit verification', (createRes.status === 200 || createRes.status === 201) && !createRes.data?.error, JSON.stringify(createRes.data));
         const rebreakdown = await api(`/api/admin/students/${studentId}/tuition`, admin.token);
         feeRow = rebreakdown.data?.rows?.[0];
       }
