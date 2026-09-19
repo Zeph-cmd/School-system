@@ -1232,14 +1232,13 @@
           <td>${escHtml(r.term || '-')}</td>
           <td>${escHtml(r.billing_cycle || '-')}</td>
           <td>${escHtml(r.billing_period || '-')}</td>
-          <td>${escHtml(r.description || '-')}</td>
           <td>${escHtml(r.due_date ? r.due_date.split('T')[0] : '-')}</td>
           <td>$${parseFloat(r.amount_due || 0).toFixed(2)}</td>
           <td>$${parseFloat(r.amount_paid || 0).toFixed(2)}</td>
           <td>$${parseFloat(r.amount_outstanding || 0).toFixed(2)}</td>
           <td>${statusBadge(r.status || 'unpaid')}</td>
           <td><button type="button" class="btn btn-sm tuition-row-edit" data-fee-id="${r.fee_id}">Edit</button></td>
-        </tr>`).join('') || '<tr><td colspan="11">No tuition records for selected filters.</td></tr>';
+        </tr>`).join('') || '<tr><td colspan="10">No tuition records for selected filters.</td></tr>';
 
       const renderGradesRows = (list) => list.map(g => `
         <tr>
@@ -1280,7 +1279,7 @@
             <div class="stat-card red"><div class="label">Outstanding</div><div class="value">$${Number(totals.amount_outstanding || 0).toLocaleString()}</div></div>
           </div>
           <h4 style="margin:0.5rem 0 0.3rem; font-size:0.95rem;">Tuition / Fee Records</h4>
-          <div class="table-container"><table><thead><tr><th>Year</th><th>Term</th><th>Cycle</th><th>Period</th><th>Description</th><th>Due Date</th><th>Due</th><th>Paid</th><th>Outstanding</th><th>Status</th><th>Action</th></tr></thead><tbody id="studentTuitionRows">${renderRows(rows)}</tbody></table></div>
+          <div class="table-container"><table><thead><tr><th>Year</th><th>Term</th><th>Cycle</th><th>Period</th><th>Due Date</th><th>Due</th><th>Paid</th><th>Outstanding</th><th>Status</th><th>Action</th></tr></thead><tbody id="studentTuitionRows">${renderRows(rows)}</tbody></table></div>
           <h4 style="margin:0.8rem 0 0.3rem; font-size:0.95rem;">Grade Records</h4>
           <div class="table-container"><table><thead><tr><th>Year</th><th>Term</th><th>Class</th><th>Subject</th><th>Marks</th><th>Grade</th><th>Remarks</th></tr></thead><tbody id="studentGradesRows">${renderGradesRows(grades)}</tbody></table></div>
           <div class="modal-actions">

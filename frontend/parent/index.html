@@ -163,7 +163,7 @@
         <div class="stats-grid" id="feeSummary" style="margin-bottom:1rem"></div>
         <div class="table-container">
           <table><thead><tr>
-            <th>Type</th><th>Term</th><th>Description</th><th>Class</th><th>Year</th><th>Due</th><th>Paid</th><th>Status</th>
+            <th>Type</th><th>Term</th><th>Class</th><th>Year</th><th>Due</th><th>Paid</th><th>Status</th>
           </tr></thead><tbody id="feesTable"></tbody></table>
         </div>
       </div>
@@ -624,10 +624,10 @@
       `;
 
       document.getElementById('feesTable').innerHTML = data.map(f => `<tr>
-        <td>${String(f.fee_type || 'general')}</td><td>${f.term || '-'}</td><td>${f.description || '-'}</td><td>${f.class_name}</td><td>${f.academic_year}</td>
+        <td>${String(f.fee_type || 'general')}</td><td>${f.term || '-'}</td><td>${f.class_name}</td><td>${f.academic_year}</td>
         <td>$${parseFloat(f.amount_due).toFixed(2)}</td><td>$${parseFloat(f.amount_paid).toFixed(2)}</td>
         <td>${statusBadge(f.status)}</td>
-      </tr>`).join('') || '<tr><td colspan="8">No fee records.</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="7">No fee records.</td></tr>';
     }
 
     async function loadHomework() {
