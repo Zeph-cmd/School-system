@@ -56,6 +56,48 @@ function deriveFeeStatus(amountDue, amountPaid) {
   return 'partial';
 }
 
+async function applyClassTuitionToEnrollment(enrollmentId, classId, academicYear) {
+  const templates = await pool.query(
+    `SELECT term, billing_cycle, billing_period, amount_due
+     FROM class_tuition_templates
+     WHERE class_id = $1 AND academic_year = $2`,
+    [classId, academicYear]
+  );
+
+  for (const template of templates.rows) {
+    const existing = await pool.query(
+      `SELECT fee_id, amount_paid
+       FROM fees
+       WHERE enrollment_id = $1
+         AND fee_type = 'tuition'
+         AND COALESCE(term, '') = COALESCE($2, '')
+         AND COALESCE(billing_cycle, '') = COALESCE($3, '')
+         AND COALESCE(billing_period, '') = COALESCE($4, '')
+       LIMIT 1`,
+      [enrollmentId, template.term, template.billing_cycle, template.billing_period]
+    );
+    const amountDue = Number(template.amount_due || 0);
+    const amountPaid = Number(existing.rows[0]?.amount_paid || 0);
+    const status = deriveFeeStatus(amountDue, amountPaid);
+    const description = `Tuition - ${template.billing_period}`;
+    if (existing.rows.length > 0) {
+      await pool.query(
+        `UPDATE fees
+         SET description = $1, amount_due = $2, status = $3
+         WHERE fee_id = $4`,
+        [description, amountDue, status, existing.rows[0].fee_id]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO fees (enrollment_id, description, amount_due, amount_paid, status, fee_type, term, billing_cycle, billing_period)
+         VALUES ($1, $2, $3, 0, $4, 'tuition', $5, $6, $7)`,
+        [enrollmentId, description, amountDue, status, template.term, template.billing_cycle, template.billing_period]
+      );
+    }
+  }
+  return templates.rows.length;
+}
+
 async function ensureSystemSettingsTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS system_settings (
@@ -530,11 +572,12 @@ async function createStudent(req, res) {
 
     if (startClassId) {
       const acadYear = await getCurrentAcademicYearSetting();
-      await pool.query(
+      const enrollmentRes = await pool.query(
         `INSERT INTO enrollments (student_id, class_id, academic_year, status)
-         VALUES ($1,$2,$3,'active')`,
+         VALUES ($1,$2,$3,'active') RETURNING enrollment_id`,
         [result.rows[0].student_id, startClassId, acadYear]
       );
+      await applyClassTuitionToEnrollment(enrollmentRes.rows[0].enrollment_id, startClassId, acadYear);
     }
 
     // If guardian_name provided, link to existing parent or create a guardian profile.
@@ -1698,6 +1741,7 @@ async function createEnrollment(req, res) {
       'INSERT INTO enrollments (student_id, class_id, academic_year) VALUES ($1,$2,$3) RETURNING *',
       [student_id, class_id, yearToUse]
     );
+    await applyClassTuitionToEnrollment(result.rows[0].enrollment_id, class_id, yearToUse);
     await req.audit('CREATE', 'enrollments', result.rows[0].enrollment_id, null, result.rows[0]);
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -2346,7 +2390,7 @@ async function approveRegistration(req, res) {
       const profileEmail = String(regReq.email || account.email || '').trim();
       let parentId = null;
 
-      const studentRes = admissionNo
+      let studentRes = admissionNo
         ? await pool.query(
             `SELECT student_id
              FROM students
@@ -2362,6 +2406,21 @@ async function approveRegistration(req, res) {
              LIMIT 1`,
             [regReq.student_first_name?.trim() || '', regReq.student_last_name?.trim() || '']
           );
+
+      if (studentRes.rows.length === 0 && regReq.student_first_name && regReq.student_last_name) {
+        const nameFallback = await pool.query(
+          `SELECT student_id
+           FROM students
+           WHERE LOWER(TRIM(first_name)) = LOWER(TRIM($1))
+             AND LOWER(TRIM(last_name)) = LOWER(TRIM($2))
+           ORDER BY student_id
+           LIMIT 2`,
+          [regReq.student_first_name, regReq.student_last_name]
+        );
+        if (nameFallback.rows.length === 1) {
+          studentRes = nameFallback;
+        }
+      }
 
       if (studentRes.rows.length === 0) {
         return res.status(400).json({ error: 'No matching student found for this parent request.' });
