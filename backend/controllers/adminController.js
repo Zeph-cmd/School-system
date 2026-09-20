@@ -525,10 +525,9 @@ async function createStudent(req, res) {
       other_name,
       gender,
       date_of_birth,
-      guardian_name,
       starting_class_id,
     } = req.body;
-    if (!first_name || !last_name || !gender || !date_of_birth || !guardian_name || !starting_class_id) {
+    if (!first_name || !last_name || !gender || !date_of_birth || !starting_class_id) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -580,38 +579,9 @@ async function createStudent(req, res) {
       await applyClassTuitionToEnrollment(enrollmentRes.rows[0].enrollment_id, startClassId, acadYear);
     }
 
-    // If guardian_name provided, link to existing parent or create a guardian profile.
-    if (guardian_name && guardian_name.trim()) {
-      const parts = guardian_name.trim().split(/\s+/);
-      const gFirst = parts[0];
-      const gLast = parts.slice(1).join(' ') || '';
-      if (gFirst) {
-        const parentMatch = await pool.query(
-          'SELECT parent_id FROM parents WHERE LOWER(first_name) = LOWER($1) AND LOWER(last_name) = LOWER($2) LIMIT 1',
-          [gFirst, gLast]
-        );
-        let parentId = parentMatch.rows[0]?.parent_id;
-        if (!parentId) {
-          const parentCreate = await pool.query(
-            `INSERT INTO parents (first_name, last_name, phone, email, relationship)
-             VALUES ($1,$2,$3,$4,$5)
-             RETURNING parent_id`,
-            [
-              gFirst,
-              gLast || '',
-              'N/A',
-              null,
-              'Guardian',
-            ]
-          );
-          parentId = parentCreate.rows[0].parent_id;
-        }
-        await pool.query(
-          'INSERT INTO parent_student (parent_id, student_id, relationship) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
-          [parentId, result.rows[0].student_id, 'Guardian']
-        );
-      }
-    }
+    // Note: parents are NOT auto-created from a guardian name anymore.
+    // Real parent accounts are created in the Parents tab and linked to
+    // students afterwards via Parent-Student Links (POST /api/admin/parent-student).
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -655,11 +625,89 @@ async function updateStudent(req, res) {
         id,
       ]
     );
-    await req.audit('UPDATE', 'students', parseInt(id), prev, result.rows[0]);
+
+    // Propagate suspension/reactivation to linked parent accounts.
+    const prevSuspended = String(prev.status || '').toLowerCase() === 'suspended';
+    const nowSuspended = String(result.rows[0].status || '').toLowerCase() === 'suspended';
+    let parentSync = { suspendedParentAccounts: 0, restoredParentAccounts: 0 };
+    if (prevSuspended !== nowSuspended) {
+      parentSync = await syncParentAccountsForStudent(id);
+    }
+
+    await req.audit('UPDATE', 'students', parseInt(id), prev, {
+      ...result.rows[0],
+      suspended_parent_accounts: parentSync.suspendedParentAccounts,
+      restored_parent_accounts: parentSync.restoredParentAccounts,
+    });
+
+    let warning = '';
+    if (parentSync.restoredParentAccounts > 0) {
+      warning = `Student reactivated. ${parentSync.restoredParentAccounts} linked parent account(s) restored.`;
+    } else if (parentSync.suspendedParentAccounts > 0) {
+      warning = `Student suspended. ${parentSync.suspendedParentAccounts} linked parent account(s) suspended.`;
+    }
+    if (warning) {
+      return res.json({ ...result.rows[0], warning });
+    }
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: 'Failed to update student' });
   }
+}
+
+// Recompute parent-role user account status from the student's current state:
+// - parent has >= 1 non-suspended child  -> account restored to 'approved'
+// - parent has 0 non-suspended children  -> account suspended
+// Only transitions between 'approved' and 'suspended' are applied.
+async function syncParentAccountsForStudent(studentId) {
+  const linkedParentUsers = await pool.query(
+    `SELECT DISTINCT u.user_id
+     FROM parent_student ps
+     JOIN parents p ON p.parent_id = ps.parent_id
+     JOIN users u ON (
+       (u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email))
+       OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username)
+     )
+     JOIN user_roles ur ON ur.user_id = u.user_id
+     JOIN roles r ON r.role_id = ur.role_id
+     WHERE ps.student_id = $1 AND r.role_name = 'parent'`,
+    [studentId]
+  );
+
+  let suspendedParentAccounts = 0;
+  let restoredParentAccounts = 0;
+  for (const row of linkedParentUsers.rows) {
+    const uid = row.user_id;
+    const visibleChildren = await pool.query(
+      `SELECT COUNT(DISTINCT s.student_id) AS cnt
+       FROM parent_student ps
+       JOIN parents p ON p.parent_id = ps.parent_id
+       JOIN students s ON s.student_id = ps.student_id
+       JOIN users u ON (
+         (u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email))
+         OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username)
+       )
+       WHERE u.user_id = $1
+         AND COALESCE(LOWER(s.status), 'active') <> 'suspended'`,
+      [uid]
+    );
+
+    if (parseInt(visibleChildren.rows[0]?.cnt || '0', 10) > 0) {
+      const restored = await pool.query(
+        "UPDATE users SET status = 'approved' WHERE user_id = $1 AND status = 'suspended' RETURNING user_id",
+        [uid]
+      );
+      restoredParentAccounts += restored.rowCount;
+    } else {
+      const updated = await pool.query(
+        "UPDATE users SET status = 'suspended' WHERE user_id = $1 AND status = 'approved' RETURNING user_id",
+        [uid]
+      );
+      suspendedParentAccounts += updated.rowCount;
+    }
+  }
+
+  return { suspendedParentAccounts, restoredParentAccounts };
 }
 
 async function deleteStudent(req, res) {
@@ -667,20 +715,6 @@ async function deleteStudent(req, res) {
     const { id } = req.params;
     const old = await pool.query('SELECT * FROM students WHERE student_id = $1', [id]);
     if (old.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
-
-    const linkedParentUsers = await pool.query(
-      `SELECT DISTINCT u.user_id
-       FROM parent_student ps
-       JOIN parents p ON p.parent_id = ps.parent_id
-       JOIN users u ON (
-         (u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email))
-         OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username)
-       )
-       JOIN user_roles ur ON ur.user_id = u.user_id
-       JOIN roles r ON r.role_id = ur.role_id
-       WHERE ps.student_id = $1 AND r.role_name = 'parent'`,
-      [id]
-    );
 
     const closed = await pool.query(
       "UPDATE enrollments SET status = 'left' WHERE student_id = $1 AND status = 'active' RETURNING enrollment_id",
@@ -690,31 +724,7 @@ async function deleteStudent(req, res) {
     // Soft delete
     await pool.query("UPDATE students SET status = 'suspended' WHERE student_id = $1", [id]);
 
-    let suspendedParentAccounts = 0;
-    for (const row of linkedParentUsers.rows) {
-      const uid = row.user_id;
-      const visibleChildren = await pool.query(
-        `SELECT COUNT(DISTINCT s.student_id) AS cnt
-         FROM parent_student ps
-         JOIN parents p ON p.parent_id = ps.parent_id
-         JOIN students s ON s.student_id = ps.student_id
-         JOIN users u ON (
-           (u.email IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) = LOWER(u.email))
-           OR LOWER(SPLIT_PART(COALESCE(p.email, ''), '@', 1)) = LOWER(u.username)
-         )
-         WHERE u.user_id = $1
-           AND COALESCE(LOWER(s.status), 'active') <> 'suspended'`,
-        [uid]
-      );
-
-      if (parseInt(visibleChildren.rows[0]?.cnt || '0', 10) === 0) {
-        const updated = await pool.query(
-          "UPDATE users SET status = 'suspended' WHERE user_id = $1 AND status = 'approved' RETURNING user_id",
-          [uid]
-        );
-        suspendedParentAccounts += updated.rowCount;
-      }
-    }
+    const { suspendedParentAccounts } = await syncParentAccountsForStudent(id);
 
     await req.audit('DELETE', 'students', parseInt(id), old.rows[0], {
       status: 'suspended',
@@ -1179,6 +1189,86 @@ async function deleteParent(req, res) {
     res.json({ message: `Parent deleted. ${unlinked.rowCount} parent-student link(s) removed automatically. ${suspendedParentUsers.rowCount} linked user account(s) suspended.` });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete parent' });
+  }
+}
+
+// One-time maintenance: merge partial (email-less, auto-created) parent
+// profiles into real parents with the same name, or flag them as incomplete.
+async function cleanupPartialParents(req, res) {
+  try {
+    const partials = await pool.query(
+      `SELECT parent_id, first_name, last_name, relationship
+       FROM parents
+       WHERE email IS NULL
+         AND COALESCE(relationship, '') NOT LIKE '%(incomplete)%'
+       ORDER BY parent_id`
+    );
+
+    const merged = [];
+    const flagged = [];
+    let deletedCount = 0;
+
+    for (const partial of partials.rows) {
+      const realMatch = await pool.query(
+        `SELECT parent_id FROM parents
+         WHERE email IS NOT NULL
+           AND LOWER(first_name) = LOWER($1)
+           AND LOWER(COALESCE(last_name, '')) = LOWER($2)
+         ORDER BY parent_id LIMIT 1`,
+        [partial.first_name, partial.last_name || '']
+      );
+
+      if (realMatch.rows.length > 0) {
+        const realId = realMatch.rows[0].parent_id;
+        const links = await pool.query(
+          'SELECT parent_student_id, student_id FROM parent_student WHERE parent_id = $1',
+          [partial.parent_id]
+        );
+        let moved = 0;
+        for (const link of links.rows) {
+          const dup = await pool.query(
+            'SELECT 1 FROM parent_student WHERE parent_id = $1 AND student_id = $2 LIMIT 1',
+            [realId, link.student_id]
+          );
+          if (dup.rows.length === 0) {
+            await pool.query(
+              'UPDATE parent_student SET parent_id = $1 WHERE parent_student_id = $2',
+              [realId, link.parent_student_id]
+            );
+            moved += 1;
+          } else {
+            await pool.query('DELETE FROM parent_student WHERE parent_student_id = $1', [link.parent_student_id]);
+          }
+        }
+        await pool.query('DELETE FROM parents WHERE parent_id = $1', [partial.parent_id]);
+        deletedCount += 1;
+        merged.push({ partial_parent_id: partial.parent_id, real_parent_id: realId, moved_links: moved });
+      } else {
+        const baseRel = (partial.relationship || 'Guardian').replace(' (incomplete)', '');
+        await pool.query(
+          'UPDATE parents SET relationship = $1 WHERE parent_id = $2',
+          [`${baseRel} (incomplete)`, partial.parent_id]
+        );
+        flagged.push(partial.parent_id);
+      }
+    }
+
+    await req.audit('UPDATE', 'parents', null, null, {
+      action: 'cleanup_partial_parents',
+      merged,
+      flagged,
+      deleted_count: deletedCount,
+    });
+
+    res.json({
+      message: `Cleanup done. ${deletedCount} partial parent profile(s) merged and deleted, ${flagged.length} flagged as incomplete.`,
+      merged,
+      flagged,
+      deleted: deletedCount,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to cleanup partial parents' });
   }
 }
 
@@ -3143,7 +3233,7 @@ module.exports = {
   getCurrentTermSettings, setCurrentTermSettings,
   getStudents, createStudent, updateStudent, deleteStudent, promoteStudent, reclassifyStudent,
   getTeachers, createTeacher, updateTeacher, deleteTeacher,
-  getParents, createParent, updateParent, deleteParent,
+  getParents, createParent, updateParent, deleteParent, cleanupPartialParents,
   getClasses, createClass, updateClass, deleteClass, lookupStudentClass,
   getClassTuitionTemplates, setClassTuition, getStudentTuitionBreakdown, deleteClassTuitionTemplate,
   getSubjects, createSubject, updateSubject, deleteSubject,

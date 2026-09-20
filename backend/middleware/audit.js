@@ -32,16 +32,29 @@ async function logAction({ userId, username, action, tableName, recordId, oldDat
  */
 function auditMiddleware(req, res, next) {
   req.audit = (action, tableName, recordId, oldData, newData) => {
-    const meta = req.adminAccessNumber
+    const device = req.adminDevice || null;
+    const meta = device
       ? {
           admin_access: {
-            access_number: req.adminAccessNumber,
-            tag: `Admin ${req.adminAccessNumber}`,
+            access_number: device.accessNumber,
+            tag: `Device ${device.accessNumber}`,
+            device_label: device.deviceLabel || null,
+            device_hash: device.deviceHash ? device.deviceHash.slice(0, 16) : null,
+            ip_address: req.ip || null,
             route: req.originalUrl || req.path,
             method: req.method,
           },
         }
-      : null;
+      : req.adminAccessNumber
+        ? {
+            admin_access: {
+              access_number: req.adminAccessNumber,
+              tag: `Admin ${req.adminAccessNumber}`,
+              route: req.originalUrl || req.path,
+              method: req.method,
+            },
+          }
+        : null;
 
     const mergedNewData = meta
       ? {

@@ -7,9 +7,12 @@
 - Teacher identity linking also uses email/username/employee number fallback joins.
 - Student deletion is soft (`students.status = 'suspended'`), and enrollments are closed (`active -> left`).
 - Parent-child visibility is status-sensitive: suspended children are hidden from parent endpoints and UI.
+- Parent account suspension follows the student's suspension state both ways (`syncParentAccountsForStudent` in `adminController.js`): suspending the last non-suspended child suspends the parent account; reactivating the child restores it to `approved`. Multi-child parents are only suspended when no non-suspended child remains, and only `approved` <-> `suspended` transitions are applied (pending/declined/terminated accounts are untouched).
 - Parent messaging permission is dynamic: blocked when parent profile/account is inactive OR no active child remains.
+- `createStudent` no longer auto-creates a partial parent profile from a guardian name. Real parents (email required) are created in the Parents tab and linked to students via Parent-Student Links. Legacy partial profiles (email-less, `phone='N/A'`, auto-created) are merged into same-name real parents — or flagged `relationship = '... (incomplete)'` — by `cleanupPartialParents` (`POST /api/admin/parents/cleanup-partial`).
 - Teacher messaging permission is dynamic: blocked when teacher status is not active.
-- Audit logs store metadata in JSON (`new_data._meta`), including admin IP access tags.
+- Audit logs store metadata in JSON (`new_data._meta`), including device access tags.
+- Admin audit identity is device-based: the panel sends a persisted `X-Device-Id` fingerprint header; `trackAdminDeviceAccess` (`adminAccessTracker.js`) upserts it into `admin_device_registry` (stable `Device N` tag across IP changes) and `audit.js` writes `tag`, `device_label` (parsed from User-Agent), short `device_hash`, and `ip_address` into `_meta.admin_access`. Legacy logs keep their IP-based `Admin N` tags.
 
 ## DB Structure (Core)
 

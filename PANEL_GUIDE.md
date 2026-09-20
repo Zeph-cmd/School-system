@@ -13,11 +13,18 @@ Important logic:
 - Deleting a teacher marks teacher as resigned and terminates linked teacher login account.
 - Deleting a parent removes parent profile/links and suspends linked parent login account.
 - Parent/teacher capabilities immediately depend on these status updates.
+- Adding a student no longer auto-creates a parent/guardian profile. Real parents are created in the Parents tab (email required) and linked to students afterwards via Parent-Student Links; one parent can have many linked children.
+- `POST /api/admin/parents/cleanup-partial` (also a button in the Parents tab): merges email-less partial parent profiles into real parents with the same name (moving their student links) and deletes them; partials with no real-name match are kept and flagged `(incomplete)` in the Relationship column for manual completion.
 
 Cross-panel reflection examples:
 - Student suspended in Admin:
   - Parent panel hides that child and blocks child-specific endpoints.
   - If no active child remains, parent messaging is blocked.
+  - If the suspended child was the parent's last non-suspended child, the parent login account is suspended too.
+- Student reactivated in Admin (Update Student, status != suspended):
+  - The child reappears in the parent panel.
+  - A parent account that was auto-suspended by the child's suspension is restored to approved and can log in again.
+  - Enrollments closed during suspension are not re-opened automatically.
 - Teacher deleted in Admin:
   - Teacher account becomes terminated; teacher cannot log in/send/reply.
   - Parent contact-teacher options reduce accordingly.
@@ -68,5 +75,7 @@ Important logic:
 ## Audit + Traceability
 
 - Admin actions are written to `audit_logs`.
-- Admin access includes a friendly tag (`Admin N`) from IP registry metadata.
-- UI shows tag + details popup for deeper trace context.
+- Identity tracking is device-based: the admin panel sends a stable `X-Device-Id` fingerprint with every request; each distinct device is registered in `admin_device_registry` and tagged (`Device N`). The tag stays stable even when the device's dynamic IP changes.
+- Each log's details include the parsed device model (e.g. `Android SM-G990B`, `Windows PC (Chrome)`) plus the IP address as secondary info (still recorded in `admin_ip_registry`).
+- Older log rows keep their historical `Admin N` (IP-based) tags.
+- UI shows device tag + details popup for deeper trace context.

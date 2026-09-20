@@ -147,6 +147,7 @@
         <h1>Parents</h1>
         <div class="btn-group">
           <input type="text" id="parentSearch" placeholder="Search parent name..." oninput="applyParentFilters()" style="padding:0.5rem; border-radius:6px; border:1px solid var(--border); width:220px">
+          <button class="btn" onclick="cleanupPartialParents()">Cleanup partial parents</button>
         </div>
         <div class="table-container">
           <table><thead><tr>
@@ -361,7 +362,7 @@
         </div>
         <div class="table-container">
           <table><thead><tr>
-            <th>User</th><th>Admin Tag</th><th>Action</th><th>Table</th><th>Time</th><th>Details</th>
+            <th>User</th><th>Device Tag</th><th>Action</th><th>Table</th><th>Time</th><th>Details</th>
           </tr></thead><tbody id="auditLogsTable"></tbody></table>
         </div>
       </div>
@@ -416,9 +417,45 @@
       window.location.href = '/login';
     }
 
+    // Stable device fingerprint: persisted locally, sent with every API call
+    // so audit logs can identify the device regardless of IP changes.
+    function computeDeviceFingerprint() {
+      const nav = window.navigator || {};
+      const parts = [
+        nav.userAgent || '',
+        nav.platform || '',
+        nav.language || '',
+        (nav.hardwareConcurrency != null ? String(nav.hardwareConcurrency) : ''),
+        (nav.deviceMemory != null ? String(nav.deviceMemory) : ''),
+        `${(window.screen || {}).width || ''}x${(window.screen || {}).height || ''}x${(window.screen || {}).colorDepth || ''}`,
+        (Intl.DateTimeFormat().resolvedOptions().timeZone || ''),
+      ];
+      return parts.join('|');
+    }
+
+    function fnv1aHash(str) {
+      let hash = 0x811c9dc5;
+      for (let i = 0; i < str.length; i++) {
+        hash ^= str.charCodeAt(i);
+        hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
+      }
+      return hash.toString(16).padStart(8, '0');
+    }
+
+    function getDeviceId() {
+      let id = null;
+      try { id = localStorage.getItem('admin_device_id'); } catch {}
+      if (!id) {
+        id = fnv1aHash(computeDeviceFingerprint()) + '-' + Date.now().toString(36);
+        try { localStorage.setItem('admin_device_id', id); } catch {}
+      }
+      return id;
+    }
+
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
+      'X-Device-Id': getDeviceId(),
     };
 
     // Shared cache used by update modals and table reloads.
@@ -941,6 +978,22 @@
       dataCache.parentsList = data;
       data.forEach(p => dataCache.parents[p.parent_id] = p);
       applyParentFilters();
+    }
+
+    async function cleanupPartialParents() {
+      const { confirmed } = await openActionDialog({
+        title: 'Cleanup partial parents',
+        message: 'Merge partial (email-less) parent profiles into real parents with the same name, or flag them as incomplete. Continue?',
+        okLabel: 'Run cleanup',
+      });
+      if (!confirmed) return;
+      const res = await api(`${API}/parents/cleanup-partial`, 'POST', {});
+      if (res && !res.error) {
+        showAlert(res.message || 'Cleanup done');
+        await loadParents();
+      } else {
+        showAlert(res?.error || 'Cleanup failed', 'error');
+      }
     }
 
     function applyParentFilters() {
@@ -1723,7 +1776,6 @@
           { name: 'other_name', label: 'Other Name' },
           { name: 'gender', label: 'Gender', type: 'select', options: ['Male','Female','Other'], required: true },
           { name: 'date_of_birth', label: 'Date of Birth', type: 'date', required: true },
-          { name: 'guardian_name', label: 'Parent/Guardian Name', placeholder: 'e.g. John Doe', required: true },
           { name: 'starting_class_id', label: 'Starting Class', type: 'select', options: [], required: true },
         ],
         onSuccess: () => { loadStudents(); },
@@ -2141,6 +2193,7 @@
         ? newData._meta.admin_access
         : null;
       if (meta && meta.tag) return meta.tag;
+      if (meta && meta.access_number && meta.device_label) return `Device ${meta.access_number}`;
       if (meta && meta.access_number) return `Admin ${meta.access_number}`;
       return '-';
     }
@@ -2165,6 +2218,7 @@
         id: log.audit_id || '-',
         user: log.username || 'System',
         admin_tag: getAdminTag(log),
+        device: (meta && (meta.device_label || meta.device_hash)) ? (meta.device_label || `hash:${meta.device_hash}`) : '-',
         action: log.action || '-',
         table: log.table_name || '-',
         record_id: log.record_id || '-',

@@ -2,12 +2,13 @@ const express = require('express');
 const router = express.Router();
 const authenticate = require('../middleware/auth');
 const authorize = require('../middleware/role');
-const { trackAdminIpAccess } = require('../middleware/adminAccessTracker');
+const { trackAdminIpAccess, trackAdminDeviceAccess } = require('../middleware/adminAccessTracker');
 const admin = require('../controllers/adminController');
 
 // All admin routes require authentication + admin role
 router.use(authenticate, authorize('admin'));
 router.use(trackAdminIpAccess);
+router.use(trackAdminDeviceAccess);
 
 // Dashboard
 router.get('/dashboard', admin.getDashboard);
@@ -40,6 +41,7 @@ router.get('/parents', admin.getParents);
 router.post('/parents', admin.createParent);
 router.put('/parents/:id', admin.updateParent);
 router.delete('/parents/:id', admin.deleteParent);
+router.post('/parents/cleanup-partial', admin.cleanupPartialParents);
 
 // Classes CRUD
 router.get('/classes', admin.getClasses);
