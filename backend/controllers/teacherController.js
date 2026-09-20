@@ -255,7 +255,8 @@ async function getMyStudents(req, res) {
     }
 
     const result = await pool.query(`
-      SELECT s.*, e.enrollment_id, e.academic_year, e.status AS enrollment_status,
+      SELECT s.student_id, s.first_name, s.last_name, s.other_name, s.gender, s.status,
+        e.enrollment_id, e.academic_year, e.status AS enrollment_status,
         (
           SELECT STRING_AGG(
             DISTINCT (

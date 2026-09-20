@@ -52,7 +52,7 @@
         </div>
         <div class="table-container">
           <table><thead><tr>
-            <th>Adm No</th><th>Name</th><th>Gender</th><th>Parent Contact(s)</th><th>Status</th>
+            <th>Name</th><th>Gender</th><th>Parent Contact(s)</th><th>Status</th>
           </tr></thead><tbody id="studentsTable"></tbody></table>
         </div>
       </div>
@@ -402,9 +402,9 @@
       const data = await api(`${API}/students?class_id=${classId}&academic_year=${encodeURIComponent(selectedTeacherYear())}`);
       if (!data) return;
       document.getElementById('studentsTable').innerHTML = data.map(s => `<tr>
-        <td>${s.admission_number}</td><td>${s.first_name} ${s.last_name}</td>
+        <td>${s.first_name} ${s.last_name}</td>
         <td>${s.gender}</td><td>${s.parent_contacts || '-'}</td><td>${s.enrollment_status}</td>
-      </tr>`).join('') || '<tr><td colspan="5">No students enrolled.</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="4">No students enrolled.</td></tr>';
     }
 
     async function loadAttendanceStudents() {
