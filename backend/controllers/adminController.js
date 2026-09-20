@@ -1065,9 +1065,9 @@ async function deleteTeacher(req, res) {
          JOIN roles r ON r.role_id = ur.role_id
          WHERE r.role_name = 'teacher'
            AND (
-             (u.email IS NOT NULL AND $1 IS NOT NULL AND LOWER(u.email) = LOWER($1))
-             OR LOWER(u.username) = LOWER(COALESCE($2, ''))
-             OR LOWER(u.username) = LOWER(COALESCE($3, ''))
+             ($1::text IS NOT NULL AND u.email IS NOT NULL AND LOWER(u.email) = LOWER($1::text))
+             OR LOWER(u.username) = LOWER(COALESCE($2::text, ''))
+             OR LOWER(u.username) = LOWER(COALESCE($3::text, ''))
            )
        )
        AND status = 'approved'
@@ -1169,8 +1169,8 @@ async function deleteParent(req, res) {
          JOIN roles r ON r.role_id = ur.role_id
          WHERE r.role_name = 'parent'
            AND (
-             (u.email IS NOT NULL AND $1 IS NOT NULL AND LOWER(u.email) = LOWER($1))
-             OR LOWER(SPLIT_PART(COALESCE($1, ''), '@', 1)) = LOWER(u.username)
+             ($1::text IS NOT NULL AND u.email IS NOT NULL AND LOWER(u.email) = LOWER($1::text))
+             OR LOWER(SPLIT_PART(COALESCE($1::text, ''), '@', 1)) = LOWER(u.username)
            )
        )
        AND status = 'approved'
@@ -1212,8 +1212,8 @@ async function cleanupPartialParents(req, res) {
       const realMatch = await pool.query(
         `SELECT parent_id FROM parents
          WHERE email IS NOT NULL
-           AND LOWER(first_name) = LOWER($1)
-           AND LOWER(COALESCE(last_name, '')) = LOWER($2)
+           AND LOWER(first_name) = LOWER($1::text)
+           AND LOWER(COALESCE(last_name, '')) = LOWER($2::text)
          ORDER BY parent_id LIMIT 1`,
         [partial.first_name, partial.last_name || '']
       );
@@ -2484,15 +2484,15 @@ async function approveRegistration(req, res) {
         ? await pool.query(
             `SELECT student_id
              FROM students
-             WHERE regexp_replace(UPPER(TRIM(admission_number)), '[^A-Z0-9]', '', 'g') = regexp_replace(UPPER(TRIM($1)), '[^A-Z0-9]', '', 'g')
+             WHERE regexp_replace(UPPER(TRIM(admission_number)), '[^A-Z0-9]', '', 'g') = regexp_replace(UPPER(TRIM($1::text)), '[^A-Z0-9]', '', 'g')
              LIMIT 1`,
             [admissionNo]
           )
         : await pool.query(
             `SELECT student_id
              FROM students
-             WHERE LOWER(TRIM(first_name)) = LOWER($1)
-               AND LOWER(TRIM(last_name)) = LOWER($2)
+             WHERE LOWER(TRIM(first_name)) = LOWER($1::text)
+               AND LOWER(TRIM(last_name)) = LOWER($2::text)
              LIMIT 1`,
             [regReq.student_first_name?.trim() || '', regReq.student_last_name?.trim() || '']
           );
@@ -2501,8 +2501,8 @@ async function approveRegistration(req, res) {
         const nameFallback = await pool.query(
           `SELECT student_id
            FROM students
-           WHERE LOWER(TRIM(first_name)) = LOWER(TRIM($1))
-             AND LOWER(TRIM(last_name)) = LOWER(TRIM($2))
+           WHERE LOWER(TRIM(first_name)) = LOWER(TRIM($1::text))
+             AND LOWER(TRIM(last_name)) = LOWER(TRIM($2::text))
            ORDER BY student_id
            LIMIT 2`,
           [regReq.student_first_name, regReq.student_last_name]
@@ -2527,8 +2527,8 @@ async function approveRegistration(req, res) {
         const nameMatch = await pool.query(
           `SELECT parent_id
            FROM parents
-           WHERE LOWER(TRIM(first_name)) = LOWER(TRIM($1))
-             AND LOWER(TRIM(last_name)) = LOWER(TRIM($2))
+           WHERE LOWER(TRIM(first_name)) = LOWER(TRIM($1::text))
+             AND LOWER(TRIM(last_name)) = LOWER(TRIM($2::text))
              AND email IS NULL
            ORDER BY parent_id
            LIMIT 1`,
@@ -2609,7 +2609,7 @@ async function rejectRegistration(req, res) {
     }
     await pool.query(
       `UPDATE registration_requests
-       SET status = 'rejected', rejection_reason = $1, reviewed_at = NOW(), reviewed_by = $2
+       SET status = 'rejected', rejection_reason = $1::text, reviewed_at = NOW(), reviewed_by = $2
        WHERE request_id = $3`,
       [reason || null, req.user.user_id, regReq.request_id]
     );
@@ -2784,7 +2784,7 @@ async function rejectGradeChange(req, res) {
 
     await pool.query(
       `UPDATE grade_change_requests
-       SET status = 'rejected', reviewed_by = $1, reviewed_at = NOW(), rejection_reason = $2
+       SET status = 'rejected', reviewed_by = $1, reviewed_at = NOW(), rejection_reason = $2::text
        WHERE request_id = $3`,
       [req.user.user_id, reason || null, id]
     );
