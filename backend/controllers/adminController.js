@@ -526,9 +526,14 @@ async function createStudent(req, res) {
       gender,
       date_of_birth,
       starting_class_id,
+      starting_term,
     } = req.body;
     if (!first_name || !last_name || !gender || !date_of_birth || !starting_class_id) {
       return res.status(400).json({ error: 'Missing required fields' });
+    }
+    const startTerm = normalizeTerm(starting_term);
+    if (!startTerm) {
+      return res.status(400).json({ error: 'Starting term is required and must be one of: Term 1, Term 2, Term 3' });
     }
 
     let startClassId = null;
@@ -551,9 +556,9 @@ async function createStudent(req, res) {
     const result = await pool.query(
       `INSERT INTO students (
         admission_number, first_name, last_name, other_name, gender, date_of_birth,
-        email, phone, tuition_amount_due, tuition_amount_paid
+        email, phone, tuition_amount_due, tuition_amount_paid, starting_term
       )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [
         admNo,
         first_name,
@@ -565,6 +570,7 @@ async function createStudent(req, res) {
         null,
         0,
         0,
+        startTerm,
       ]
     );
     await req.audit('CREATE', 'students', result.rows[0].student_id, null, result.rows[0]);
@@ -572,9 +578,9 @@ async function createStudent(req, res) {
     if (startClassId) {
       const acadYear = await getCurrentAcademicYearSetting();
       const enrollmentRes = await pool.query(
-        `INSERT INTO enrollments (student_id, class_id, academic_year, status)
-         VALUES ($1,$2,$3,'active') RETURNING enrollment_id`,
-        [result.rows[0].student_id, startClassId, acadYear]
+        `INSERT INTO enrollments (student_id, class_id, academic_year, term, status)
+         VALUES ($1,$2,$3,$4,'active') RETURNING enrollment_id`,
+        [result.rows[0].student_id, startClassId, acadYear, startTerm]
       );
       await applyClassTuitionToEnrollment(enrollmentRes.rows[0].enrollment_id, startClassId, acadYear);
     }
@@ -817,8 +823,8 @@ async function promoteStudent(req, res) {
 
     const acadYear = nextAcademicYear(await getCurrentAcademicYearSetting());
     const result = await pool.query(
-      `INSERT INTO enrollments (student_id, class_id, academic_year, status)
-       VALUES ($1,$2,$3,'active') RETURNING *`,
+      `INSERT INTO enrollments (student_id, class_id, academic_year, term, status)
+       VALUES ($1,$2,$3,'Term 1','active') RETURNING *`,
       [id, to_class_id, acadYear]
     );
 
@@ -876,8 +882,8 @@ async function reclassifyStudent(req, res) {
       }
 
       const kept = await pool.query(
-        `INSERT INTO enrollments (student_id, class_id, academic_year, status)
-         VALUES ($1,$2,$3,'active') RETURNING *`,
+        `INSERT INTO enrollments (student_id, class_id, academic_year, term, status)
+         VALUES ($1,$2,$3,'Term 1','active') RETURNING *`,
         [id, current.class_id, academicYear]
       );
       await req.audit('CREATE', 'enrollments', kept.rows[0].enrollment_id, null, {
@@ -983,8 +989,8 @@ async function reclassifyStudent(req, res) {
     }
 
     const moved = await pool.query(
-      `INSERT INTO enrollments (student_id, class_id, academic_year, status)
-       VALUES ($1,$2,$3,'active') RETURNING *`,
+      `INSERT INTO enrollments (student_id, class_id, academic_year, term, status)
+       VALUES ($1,$2,$3,'Term 1','active') RETURNING *`,
       [id, target.class_id, academicYear]
     );
 
@@ -1795,7 +1801,7 @@ async function deleteSubject(req, res) {
 // ─── ENROLLMENTS ──────────────────────────────────────────────────
 async function getEnrollments(req, res) {
   try {
-    const { class_id, academic_year } = req.query;
+    const { class_id, academic_year, term } = req.query;
     const params = [];
     let where = 'WHERE 1=1';
     if (class_id) {
@@ -1805,6 +1811,13 @@ async function getEnrollments(req, res) {
     if (academic_year) {
       params.push(academic_year);
       where += ` AND e.academic_year = $${params.length}`;
+    }
+    if (term) {
+      const normalizedTerm = normalizeTerm(term);
+      if (normalizedTerm) {
+        params.push(normalizedTerm);
+        where += ` AND e.term = $${params.length}`;
+      }
     }
     const result = await pool.query(`
       SELECT e.*, s.first_name || ' ' || s.last_name AS student_name, c.class_name
@@ -1822,14 +1835,15 @@ async function getEnrollments(req, res) {
 
 async function createEnrollment(req, res) {
   try {
-    const { student_id, class_id, academic_year } = req.body;
+    const { student_id, class_id, academic_year, term } = req.body;
     if (!student_id || !class_id) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     const yearToUse = String(academic_year || '').trim() || await getCurrentAcademicYearSetting();
+    const termToUse = normalizeTerm(term) || await getCurrentTermSetting();
     const result = await pool.query(
-      'INSERT INTO enrollments (student_id, class_id, academic_year) VALUES ($1,$2,$3) RETURNING *',
-      [student_id, class_id, yearToUse]
+      'INSERT INTO enrollments (student_id, class_id, academic_year, term) VALUES ($1,$2,$3,$4) RETURNING *',
+      [student_id, class_id, yearToUse, termToUse]
     );
     await applyClassTuitionToEnrollment(result.rows[0].enrollment_id, class_id, yearToUse);
     await req.audit('CREATE', 'enrollments', result.rows[0].enrollment_id, null, result.rows[0]);
@@ -2856,7 +2870,7 @@ async function getStudentRecord(req, res) {
 
     // Get enrollment timeline and class context
     const enrollRes = await pool.query(`
-      SELECT e.enrollment_id, e.academic_year, e.status,
+      SELECT e.enrollment_id, e.academic_year, e.term, e.status,
              e.date_enrolled AS enrollment_date,
              c.class_name, c.level
       FROM enrollments e
@@ -2869,6 +2883,7 @@ async function getStudentRecord(req, res) {
     const firstEnrollment = enrollments.length > 0 ? enrollments[0].enrollment_date : null;
     const startedClass = enrollments.length > 0 ? enrollments[0].class_name : null;
     const startedAcademicYear = enrollments.length > 0 ? enrollments[0].academic_year : null;
+    const startedTerm = enrollments.length > 0 ? (enrollments[0].term || student.starting_term || null) : student.starting_term || null;
     const activeEnrollment = enrollments.find(e => e.status === 'active');
     const latestEnrollment = enrollments.length > 0 ? enrollments[enrollments.length - 1] : null;
     const leftEnrollment = [...enrollments].reverse().find(e => e.status !== 'active');
@@ -2889,6 +2904,7 @@ async function getStudentRecord(req, res) {
       enrollments,
       started_class: startedClass,
       started_academic_year: startedAcademicYear,
+      started_term: startedTerm,
       date_of_enrollment: firstEnrollment,
       date_of_departure: departure,
       current_class: currentClass,

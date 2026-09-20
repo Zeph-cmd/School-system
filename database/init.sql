@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS students (
     phone VARCHAR(20),
     tuition_amount_due NUMERIC NOT NULL DEFAULT 0,
     tuition_amount_paid NUMERIC NOT NULL DEFAULT 0,
+    starting_term VARCHAR(20) CHECK (starting_term IN ('Term 1', 'Term 2', 'Term 3')),
     status VARCHAR(20) NOT NULL DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -140,6 +141,7 @@ CREATE TABLE IF NOT EXISTS enrollments (
     student_id INT NOT NULL REFERENCES students(student_id),
     class_id INT NOT NULL REFERENCES classes(class_id),
     academic_year VARCHAR(20) NOT NULL,
+    term VARCHAR(20) CHECK (term IN ('Term 1', 'Term 2', 'Term 3')),
     date_enrolled DATE NOT NULL DEFAULT CURRENT_DATE,
     status VARCHAR(20) DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

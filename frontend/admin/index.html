@@ -1084,22 +1084,37 @@
         ...enrollmentYears,
       ].filter(Boolean))].sort().reverse();
       const selectedYear = enrollmentYears.includes(configuredYear) ? configuredYear : (enrollmentYears[0] || configuredYear || '');
-      const renderRows = (year) => rows
+      const termOptions = ['Term 1', 'Term 2', 'Term 3'];
+      const renderRows = (year, term) => rows
         .filter(r => !year || String(r.academic_year || '').trim() === year)
-        .map(r => `<tr><td>${escHtml(r.student_name || '-')}</td><td>${escHtml(r.academic_year || '-')}</td><td>${statusBadge(r.status || '-')}</td></tr>`)
-        .join('') || '<tr><td colspan="3">No students for selected academic year.</td></tr>';
+        .filter(r => !term || String(r.term || 'Term 1') === term)
+        .map(r => `<tr><td>${escHtml(r.student_name || '-')}</td><td>${escHtml(r.academic_year || '-')}</td><td>${escHtml(r.term || 'Term 1')}</td><td>${statusBadge(r.status || '-')}</td></tr>`)
+        .join('') || '<tr><td colspan="4">No students for selected academic year and term.</td></tr>';
 
       const body = `
-        <div class="form-group" style="max-width:260px;margin-bottom:0.75rem;">
-          <label>Academic Year</label>
-          <select id="viewClassYearFilter" onchange="document.getElementById('viewClassYearTbody').innerHTML = window.__renderViewClassRows(this.value)">
-            ${yearOptions.map(y => `<option value="${escHtml(y)}" ${y === selectedYear ? 'selected' : ''}>${escHtml(y)}</option>`).join('')}
-          </select>
+        <div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-bottom:0.75rem;">
+          <div class="form-group" style="max-width:220px;margin-bottom:0;">
+            <label>Academic Year</label>
+            <select id="viewClassYearFilter" onchange="viewClassApplyFilters()">
+              ${yearOptions.map(y => `<option value="${escHtml(y)}" ${y === selectedYear ? 'selected' : ''}>${escHtml(y)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group" style="max-width:180px;margin-bottom:0;">
+            <label>Term</label>
+            <select id="viewClassTermFilter" onchange="viewClassApplyFilters()">
+              <option value="">All Terms</option>
+              ${termOptions.map(t => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('')}
+            </select>
+          </div>
         </div>
-        <div class="table-container"><table><thead><tr><th>Student</th><th>Year</th><th>Status</th></tr></thead><tbody id="viewClassYearTbody">${renderRows(selectedYear)}</tbody></table></div>
+        <div class="table-container"><table><thead><tr><th>Student</th><th>Year</th><th>Term</th><th>Status</th></tr></thead><tbody id="viewClassYearTbody">${renderRows(selectedYear, '')}</tbody></table></div>
       `;
 
-      window.__renderViewClassRows = renderRows;
+      window.viewClassApplyFilters = () => {
+        const year = document.getElementById('viewClassYearFilter')?.value || '';
+        const term = document.getElementById('viewClassTermFilter')?.value || '';
+        document.getElementById('viewClassYearTbody').innerHTML = renderRows(year, term);
+      };
 
       document.getElementById('modalTitle').textContent = `Class Students - ${className}`;
       const form = document.getElementById('modalForm');
@@ -1777,6 +1792,7 @@
           { name: 'gender', label: 'Gender', type: 'select', options: ['Male','Female','Other'], required: true },
           { name: 'date_of_birth', label: 'Date of Birth', type: 'date', required: true },
           { name: 'starting_class_id', label: 'Starting Class', type: 'select', options: [], required: true },
+          { name: 'starting_term', label: 'Starting Term', type: 'select', options: ['Term 1', 'Term 2', 'Term 3'], required: true },
         ],
         onSuccess: () => { loadStudents(); },
       },
@@ -1882,6 +1898,11 @@
             label: `${c.class_name} (${c.level})`,
           }));
         }
+        const termField = config.fields.find(f => f.name === 'starting_term');
+        if (termField) {
+          const termSettings = await api(`${API}/current-term-settings`);
+          if (termSettings && termSettings.current_term) termField.value = termSettings.current_term;
+        }
         const admField = config.fields.find(f => f.name === 'admission_number');
         if (admField) admField.value = generateRandomAdmissionNumber();
       }
@@ -1908,7 +1929,8 @@
           const opts = (f.options || []).map(o => {
             const val = typeof o === 'object' ? o.value : o;
             const label = typeof o === 'object' ? o.label : o;
-            return `<option value="${escHtml(String(val))}">${escHtml(String(label))}</option>`;
+            const selectedAttr = f.value !== undefined && String(val) === String(f.value) ? 'selected' : '';
+            return `<option value="${escHtml(String(val))}" ${selectedAttr}>${escHtml(String(label))}</option>`;
           }).join('');
           return `<div class="form-group"><label>${f.label}${!f.required ? ' <span class="optional-hint">Optional</span>' : ''}</label>
             <select name="${f.name}" ${f.required ? 'required' : ''}><option value="">Select...</option>${opts}</select></div>`;
@@ -2329,6 +2351,7 @@
       const classLeft = data.class_left || 'N/A';
       const startedClass = data.started_class || 'N/A';
       const startedAcademicYear = data.started_academic_year || 'N/A';
+      const startedTerm = data.started_term || 'N/A';
       const enrollDate = data.date_of_enrollment ? new Date(data.date_of_enrollment).toLocaleDateString() : 'N/A';
       const departDate = data.date_of_departure ? new Date(data.date_of_departure).toLocaleDateString() : 'N/A';
 
@@ -2362,6 +2385,7 @@
           <h3>Enrollment Details</h3>
           <div class="record-field"><span class="label">Started Class:</span> ${escHtml(startedClass)}</div>
           <div class="record-field"><span class="label">Started Academic Year:</span> ${escHtml(startedAcademicYear)}</div>
+          <div class="record-field"><span class="label">Starting Term:</span> ${escHtml(startedTerm)}</div>
           <div class="record-field"><span class="label">Current Class:</span> ${st.status === 'active' ? escHtml(currentClass) : '-'}</div>
           <div class="record-field"><span class="label">Class Left:</span> ${st.status !== 'active' ? escHtml(classLeft) : '-'}</div>
           <div class="record-field"><span class="label">Date of Enrollment:</span> ${enrollDate}</div>
