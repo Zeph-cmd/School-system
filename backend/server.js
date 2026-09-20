@@ -8,6 +8,7 @@ const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 const teacherRoutes = require('./routes/teacher');
 const parentRoutes = require('./routes/parent');
+const assistantRoutes = require('./routes/assistant');
 
 const app = express();
 app.set('trust proxy', true);
@@ -59,6 +60,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/teacher', teacherRoutes);
 app.use('/api/parent', parentRoutes);
+app.use('/api/assistant', assistantRoutes);
 
 // Frontend route shortcuts
 app.get('/login', (req, res) => {
