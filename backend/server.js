@@ -14,9 +14,17 @@ const app = express();
 app.set('trust proxy', true);
 const APP_USER_AGENT = (process.env.APP_USER_AGENT || 'FreeSchoolManagementApp/1.0').toLowerCase();
 
-function isAllowedAppClient(req) {
+function isAllowedClient(req) {
   const userAgent = String(req.get('User-Agent') || '').toLowerCase();
-  return userAgent.includes(APP_USER_AGENT);
+  // Official Android WebView app
+  if (userAgent.includes(APP_USER_AGENT)) {
+    return true;
+  }
+  // iOS Safari devices (PWA "Add to Home Screen" install path)
+  if (userAgent.includes('iphone') || userAgent.includes('ipad')) {
+    return true;
+  }
+  return false;
 }
 
 function sendRestrictedAccess(res) {
@@ -33,7 +41,7 @@ app.use((req, res, next) => {
     return next();
   }
 
-  if (isAllowedAppClient(req)) {
+  if (isAllowedClient(req)) {
     return next();
   }
 
